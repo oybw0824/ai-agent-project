@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.nbcb</groupId>
+        <artifactId>ai-agent-project</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>mcp-service</artifactId>
+    <name>mcp-service</name>
+    <description>MCP 工具服务端 — WebFlux STREAMABLE，Extensions Registry 注册到 Nacos</description>
+
+    <dependencies>
+        <!-- MCP Server WebFlux (ASYNC STREAMABLE) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webflux</artifactId>
+        </dependency>
+
+        <!-- Nacos MCP Registry（自动注册工具到 Nacos） -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-starter-mcp-registry</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

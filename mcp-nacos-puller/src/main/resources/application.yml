@@ -1,0 +1,32 @@
+# ============================================================
+# mcp-nacos-puller — MCP Nacos 拉取器 配置文件
+# 直接通过 HTTP 调用 Nacos REST API 拉取所有注册的 MCP 服务
+# ============================================================
+
+server:
+  port: ${SERVER_PORT:8083}
+
+spring:
+  application:
+    name: mcp-nacos-puller
+
+# ==================== MCP 拉取配置 ====================
+mcp:
+  puller:
+    # MCP 服务所在的 Nacos 分组
+    # 遵循 Spring AI Alibaba 约定，使用 mcp-server
+    group: mcp-server
+    # 是否开启登录认证（Nacos 开启认证时设为 true）
+    login-enabled: true
+
+# ==================== 日志 ====================
+logging:
+  level:
+    com.nbcb.puller: INFO
+
+# ==================== Actuator 监控 ====================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

@@ -1,0 +1,91 @@
+# ============================================================
+# agent-server — 智能体服务端 配置文件
+# MCP 工具从 Nacos AI Registry 分布式发现（STREAMABLE 协议）
+# ============================================================
+
+server:
+  port: ${SERVER_PORT:8082}
+
+spring:
+  application:
+    name: agent-server
+
+  # ==================== DeepSeek Chat Model ====================
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-v4-flash
+          max-tokens: 32768
+
+    # ==================== MCP Client ====================
+    mcp:
+      client:
+        enabled: true
+        name: agent-server
+        version: 1.0.0
+        request-timeout: 600s
+        type: ASYNC
+
+    # ==================== ★ Nacos MCP 分布式客户端 ====================
+    alibaba:
+      mcp:
+        nacos:
+          client:
+            enabled: true
+            streamable:
+              connections:
+                server1:
+                  service-name: mcp-service
+                  version: 1.1.0
+            configs:
+              server1:
+                namespace: ${NACOS_NAMESPACE:public}
+                server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+                username: ${NACOS_USERNAME:nacos}
+                password: ${NACOS_PASSWORD:nacos}
+
+# ==================== Prompt 提示词配置 ====================
+# ★ 以 Nacos 为主，拉取到提示词后自动回写本地 .md 文件保持同步
+# Nacos 不可用时自动降级使用本地文件，保证业务不中断
+prompt:
+  local:
+    enabled: true                             # 是否启用本地文件扫描
+    dir: src/main/resources/prompt              # ★ 本地源码目录（Nacos 回写目标，确保与源文件同步）
+    location: classpath:prompt/*.md              # 类路径扫描（启动时读取兜底）
+  nacos:
+    extra-keys:                                 # ★ Nacos 额外 prompt key（逗号分隔，本地不存在但 Nacos 有管理的）
+
+# ==================== 日志 ====================
+logging:
+  level:
+    com.nbcb.agent: INFO
+
+# ==================== Agent 优化配置 ====================
+agent:
+  stream:
+    timeout-seconds: 300                          # SSE 流式超时（秒）
+  retry:
+    max-attempts: 2                               # Agent 调用最大重试次数
+    delay-ms: 1000                                # 重试间隔（毫秒）
+  skill:
+    preload: general-assistant,code-generator,data-analyst,content-creator,document-parser
+
+# ==================== Actuator & 监控 ====================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name:agent-server}
+  endpoint:
+    health:
+      show-details: always
+      show-components: always

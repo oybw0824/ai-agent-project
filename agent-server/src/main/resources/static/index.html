@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- ★ 禁止浏览器请求 /favicon.ico，避免 NoResourceFoundException -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+<title>AI Agent — 技能驱动智能助手</title>
+<style>
+/* ========== Reset & Variables ========== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary: #f5f5f5;
+  --bg-sidebar: #ffffff;
+  --bg-chat: #f9fafb;
+  --bg-user-bubble: #4f6ef6;
+  --bg-assistant-bubble: #ffffff;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b7280;
+  --text-user-bubble: #ffffff;
+  --border: #e5e7eb;
+  --shadow: 0 1px 3px rgba(0,0,0,.06);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,.08);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --sidebar-width: 280px;
+  --header-height: 56px;
+  --input-height: 64px;
+}
+
+/* ========== Layout ========== */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ========== Sidebar ========== */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-header .logo {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, #4f6ef6, #7c5cfc);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 18px;
+}
+
+.sidebar-header h2 { font-size: 16px; font-weight: 600; }
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.sidebar-section { margin-bottom: 16px; }
+
+.sidebar-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--text-secondary);
+  padding: 8px 8px 6px;
+  display: flex; align-items: center; gap: 6px;
+}
+
+.sidebar-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s;
+  color: var(--text-primary);
+}
+
+.sidebar-item:hover { background: #f3f4f6; }
+
+.sidebar-item .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sidebar-item .dot.skill { background: #10b981; }
+.sidebar-item .dot.tool { background: #f59e0b; }
+
+.sidebar-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-item .badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 10px;
+  background: #f3f4f6; color: var(--text-secondary);
+}
+
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-secondary);
+  display: flex; align-items: center; gap: 8px;
+}
+
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #10b981;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
+/* ========== Main Chat Area ========== */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-chat);
+}
+
+.chat-header {
+  height: var(--header-height);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  background: var(--bg-sidebar);
+  gap: 12px;
+}
+
+.chat-header .title { font-size: 15px; font-weight: 600; }
+
+.chat-header select {
+  padding: 4px 10px; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 13px;
+  background: #fff; color: var(--text-primary);
+}
+
+/* ========== Messages ========== */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.message { display: flex; gap: 10px; max-width: 85%; animation: fadeIn .3s; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.message.user { align-self: flex-end; flex-direction: row-reverse; }
+
+.message.assistant { align-self: flex-start; }
+
+.avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; flex-shrink: 0;
+}
+
+.message.user .avatar { background: #4f6ef6; color: #fff; }
+.message.assistant .avatar { background: #e5e7eb; color: #374151; }
+
+.bubble {
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.message.user .bubble {
+  background: var(--bg-user-bubble);
+  color: var(--text-user-bubble);
+  border-bottom-right-radius: 4px;
+}
+
+.message.assistant .bubble {
+  background: var(--bg-assistant-bubble);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+  box-shadow: var(--shadow);
+}
+
+/* Markdown-ish styles in assistant bubble */
+.bubble h2 { font-size: 16px; margin: 8px 0 4px; }
+.bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+.bubble table th, .bubble table td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
+.bubble table th { background: #f9fafb; font-weight: 600; }
+.bubble code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+.bubble strong { font-weight: 600; }
+.bubble ul, .bubble ol { padding-left: 20px; margin: 4px 0; }
+
+/* Tool Call Card */
+.tool-call-card {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #f9fafb;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.tool-call-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tool-call-header:hover { background: #f3f4f6; }
+
+.tool-call-header .icon { font-size: 14px; }
+
+.tool-call-body {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  display: none;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tool-call-body.open { display: block; }
+
+.tool-call-body pre {
+  background: #1e1e2e; color: #cdd6f4;
+  padding: 8px 12px; border-radius: 4px;
+  overflow-x: auto; font-size: 11px;
+  margin: 4px 0;
+  white-space: pre-wrap; word-break: break-all;
+}
+
+/* Meta info */
+.meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  display: flex; gap: 12px;
+}
+
+.welcome {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+}
+
+.welcome h1 { font-size: 24px; color: var(--text-primary); margin-bottom: 8px; }
+.welcome p { font-size: 14px; }
+
+/* ========== Input Area ========== */
+.input-area {
+  padding: 12px 24px 16px;
+  background: var(--bg-chat);
+  border-top: 1px solid var(--border);
+}
+
+.input-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  box-shadow: var(--shadow-lg);
+  transition: border-color .2s;
+}
+
+.input-box:focus-within { border-color: #4f6ef6; }
+
+.input-box textarea {
+  flex: 1; border: none; outline: none;
+  resize: none; font-size: 14px; line-height: 1.5;
+  max-height: 120px; min-height: 24px;
+  font-family: inherit; background: transparent;
+}
+
+.input-box button {
+  width: 36px; height: 36px;
+  border: none; border-radius: 8px;
+  background: #4f6ef6; color: #fff;
+  cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .2s; flex-shrink: 0;
+}
+
+.input-box button:hover { background: #3b5de7; }
+.input-box button:disabled { background: #c7d2fe; cursor: not-allowed; }
+
+/* Loading */
+.typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+.typing span { width: 6px; height: 6px; border-radius: 50%; background: #9ca3af; animation: bounce 1.4s infinite; }
+.typing span:nth-child(2) { animation-delay: .2s; }
+.typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+
+/* Streaming */
+.stream-thinking {
+  display: flex; align-items: center;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+
+.stream-skills { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+
+.stream-tools { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+
+/* ========== Responsive ========== */
+@media (max-width: 640px) {
+  .sidebar { display: none; }
+  .message { max-width: 95%; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== Sidebar ==================== -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">🤖</div>
+    <h2>AI Agent</h2>
+  </div>
+
+  <div class="sidebar-body">
+    <!-- Navigation -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">导航</div>
+      <a href="/" class="sidebar-item" style="text-decoration:none;background:#f3f4f6;font-weight:600">
+        <span class="dot" style="background:#4f6ef6"></span>
+        <span class="name">💬 对话</span>
+      </a>
+      <a href="/skill-generator.html" class="sidebar-item" style="text-decoration:none">
+        <span class="dot" style="background:#10b981"></span>
+        <span class="name">⚡ Skill Generator</span>
+      </a>
+    </div>
+
+    <!-- Skills Section -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">📋 技能列表 (Skills)</div>
+      <div id="skill-list">
+        <div class="sidebar-item"><span style="color:var(--text-secondary);font-size:12px">加载中...</span></div>
+      </div>
+    </div>
+
+    <!-- Tools Section -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">🔧 工具列表 (MCP Tools)</div>
+      <div id="tool-list">
+        <div class="sidebar-item"><span style="color:var(--text-secondary);font-size:12px">加载中...</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">检测中...</span>
+    <span style="margin-left:auto;font-size:10px" id="mode-tag"></span>
+  </div>
+</aside>
+
+<!-- ==================== Main Chat ==================== -->
+<main class="main">
+  <div class="chat-header">
+    <span class="title">💬 对话</span>
+    <select id="skill-select" onchange="onSkillChange()">
+      <option value="general-assistant">general-assistant</option>
+    </select>
+    <span style="font-size:12px;color:var(--text-secondary)">当前技能</span>
+  </div>
+
+  <div class="messages" id="messages">
+    <div class="welcome">
+      <h1>👋 你好！我是技能驱动的智能助手</h1>
+      <p>使用 <code>read_skill</code> 按需加载技能，调用 MCP 工具完成任务。</p>
+      <p style="margin-top:8px">试试问我：<br>「北京今天天气怎么样？」「计算 25+36×2」</p>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="input-box">
+      <textarea id="user-input" rows="1" placeholder="输入您的问题，Enter 发送，Shift+Enter 换行..."
+        onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>
+      <button id="send-btn" onclick="sendMessage()" title="发送">➤</button>
+    </div>
+  </div>
+</main>
+
+<script>
+// ==================== State ====================
+let isLoading = false;
+
+// ==================== Init ====================
+document.addEventListener('DOMContentLoaded', () => {
+  loadSidebar();
+  document.getElementById('user-input').focus();
+});
+
+// ==================== Load Sidebar Data ====================
+async function loadSidebar() {
+  try {
+    const [skillsRes, toolsRes] = await Promise.all([
+      fetch('/skills').then(r => r.json()),
+      fetch('/tools').then(r => r.json())
+    ]);
+    renderSkills(skillsRes);
+    renderTools(toolsRes);
+    updateStatus(skillsRes);
+    updateSkillSelect(skillsRes);
+  } catch (err) {
+    console.error('加载侧边栏失败:', err);
+    document.getElementById('status-text').textContent = '连接失败';
+    document.getElementById('status-dot').style.background = '#ef4444';
+  }
+}
+
+function renderSkills(data) {
+  const container = document.getElementById('skill-list');
+  const ids = data.availableSkillIds || [];
+  if (ids.length === 0) {
+    container.innerHTML = '<div class="sidebar-item"><span style="color:var(--text-secondary);font-size:12px">暂无技能</span></div>';
+    return;
+  }
+  container.innerHTML = ids.map(id =>
+    `<div class="sidebar-item" onclick="selectSkill('${id}')" title="点击使用此技能">
+      <span class="dot skill"></span>
+      <span class="name">${escapeHtml(id)}</span>
+      <span class="badge">Nacos</span>
+    </div>`
+  ).join('');
+}
+
+function renderTools(tools) {
+  const container = document.getElementById('tool-list');
+  if (!tools || tools.length === 0) {
+    container.innerHTML = '<div class="sidebar-item"><span style="color:var(--text-secondary);font-size:12px">暂无工具</span></div>';
+    return;
+  }
+  container.innerHTML = tools.map(t => {
+    const source = t.source || 'MCP';
+    return `<div class="sidebar-item" title="${escapeHtml(t.description || '')}&#10;来源: ${escapeHtml(t.sourceDetail || source)}">
+      <span class="dot tool"></span>
+      <span class="name">${escapeHtml(t.name)}</span>
+      <span class="badge">${escapeHtml(source)}</span>
+    </div>`;
+  }).join('');
+}
+
+function updateStatus(data) {
+  const dot = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  const tag = document.getElementById('mode-tag');
+  if (data.nacosConnected) {
+    dot.style.background = '#10b981';
+    text.textContent = `Nacos 已连接 · ${data.skillCount || 0} 技能`;
+  } else {
+    dot.style.background = '#f59e0b';
+    text.textContent = 'Nacos 未连接 · 内置模式';
+  }
+  tag.textContent = data.mode || '';
+}
+
+function updateSkillSelect(data) {
+  const select = document.getElementById('skill-select');
+  const ids = data.availableSkillIds || [];
+  if (ids.length === 0) return;
+  select.innerHTML = ids.map(id => `<option value="${id}">${escapeHtml(id)}</option>`).join('');
+}
+
+function selectSkill(id) {
+  document.getElementById('skill-select').value = id;
+}
+
+function onSkillChange() {
+  // skill changed, nothing else needed
+}
+
+// ==================== Chat ====================
+async function sendMessage() {
+  if (isLoading) return;
+
+  const input = document.getElementById('user-input');
+  const question = input.value.trim();
+  if (!question) return;
+
+  // Clear welcome
+  const welcome = document.querySelector('.welcome');
+  if (welcome) welcome.remove();
+
+  // Show user message
+  appendMessage('user', question);
+  input.value = '';
+  input.style.height = 'auto';
+
+  isLoading = true;
+  document.getElementById('send-btn').disabled = true;
+
+  // ★ 创建流式消息容器（替代一次性 loading）
+  const msgId = createStreamingMessage();
+
+  try {
+    const res = await fetch('/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+
+    if (!res.ok) {
+      throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+    }
+
+    // ★ 使用 ReadableStream 逐行解析 SSE 事件
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      // 保留最后一行（可能不完整）
+      buffer = lines.pop() || '';
+
+      let currentEvent = '';
+      for (const line of lines) {
+        // ★ SSE 规范：空行分隔事件，每个新事件重置 event 类型
+        if (line.trim() === '') {
+          currentEvent = '';
+          continue;
+        }
+        // ★ Spring SseEmitter 格式: "event:thinking" 和 "data:{...}"（冒号后无空格）
+        // 使用 .trim() 兼容带/不带空格两种格式
+        if (line.startsWith('event:')) {
+          currentEvent = line.substring(6).trim();
+        } else if (line.startsWith('data:')) {
+          const dataStr = line.substring(5).trim();
+          if (!dataStr) continue;
+          try {
+            const event = JSON.parse(dataStr);
+            handleStreamEvent(msgId, currentEvent, event);
+          } catch (e) {
+            console.warn('SSE 解析失败:', e, 'raw:', dataStr);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('流式请求失败:', err);
+    finalizeStreamingMessage(msgId, null, '请求失败: ' + err.message);
+  } finally {
+    isLoading = false;
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('user-input').focus();
+  }
+}
+
+function appendMessage(role, content) {
+  const container = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  div.innerHTML = `
+    <div class="avatar">${role === 'user' ? '👤' : '🤖'}</div>
+    <div>
+      <div class="bubble">${escapeHtml(content)}</div>
+    </div>`;
+  container.appendChild(div);
+  scrollToBottom();
+  return div.id;
+}
+
+// ==================== Streaming SSE ====================
+
+// ★ 流式消息状态存储（key = msgId）
+const streamState = {};
+
+/**
+ * 创建流式消息容器 — 初始化空白消息框，后续通过 SSE 事件逐步填充
+ */
+function createStreamingMessage() {
+  const container = document.getElementById('messages');
+  const id = 'stream-' + Date.now();
+
+  streamState[id] = {
+    answer: '',
+    toolCalls: [],
+    skills: [],
+    thinking: true,
+    metadata: null,
+    messageReceived: false
+  };
+
+  const div = document.createElement('div');
+  div.className = 'message assistant';
+  div.id = id;
+  div.innerHTML = `
+    <div class="avatar">🤖</div>
+    <div style="flex:1;min-width:0">
+      <div class="stream-thinking" id="think-${id}">
+        <div class="typing"><span></span><span></span><span></span></div>
+        <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">正在分析...</span>
+      </div>
+      <div class="stream-skills" id="skills-${id}"></div>
+      <div class="stream-tools" id="tools-${id}"></div>
+      <div class="bubble" id="text-${id}" style="display:none"></div>
+      <div class="meta" id="meta-${id}"></div>
+    </div>`;
+  container.appendChild(div);
+  scrollToBottom();
+  return id;
+}
+
+/**
+ * ★ 核心：根据 SSE 事件类型分发处理
+ */
+function handleStreamEvent(msgId, eventType, event) {
+  const state = streamState[msgId];
+  if (!state) return;
+
+  // 后端 EventType 枚举值映射（大小写兼容）
+  const type = (eventType || event.type || '').toLowerCase();
+
+  switch (type) {
+    case 'thinking':
+      updateThinking(msgId, event.message);
+      break;
+    case 'text':
+      // 如果已收到完整 message，忽略后续 text 事件
+      if (state.messageReceived) break;
+      appendStreamText(msgId, event.message);
+      break;
+    case 'node':
+      // Graph Node 执行完成 — 可忽略或用于调试
+      break;
+    case 'skill_load':
+      addStreamSkill(msgId, event);
+      break;
+    case 'tool_call':
+      addStreamToolCall(msgId, event);
+      break;
+    case 'tool_result':
+      updateStreamToolResult(msgId, event);
+      break;
+    case 'message':
+      // ★ 后端完整回答 — 直接替换（防止与 text 事件重复）
+      state.messageReceived = true;
+      setFinalAnswer(msgId, event.message);
+      break;
+    case 'done':
+      finalizeStreamingMessage(msgId, event.data, null);
+      break;
+    case 'error':
+      finalizeStreamingMessage(msgId, null, event.message);
+      break;
+  }
+}
+
+/** 更新 thinking 提示文字 */
+function updateThinking(msgId, message) {
+  const el = document.getElementById('think-' + msgId);
+  if (el) {
+    el.innerHTML = `<span style="font-size:12px;color:var(--text-secondary)">💭 ${escapeHtml(message)}</span>`;
+  }
+}
+
+/** ★ 设置最终回答（message 事件到达时调用，替换而非追加） */
+function setFinalAnswer(msgId, text) {
+  const state = streamState[msgId];
+  if (!state || !text) return;
+
+  // 如果 text 事件已经构建了相同的答案，跳过不必要的替换
+  if (state.answer === text) return;
+
+  // 隐藏 thinking
+  if (state.thinking) {
+    state.thinking = false;
+    const thinkEl = document.getElementById('think-' + msgId);
+    if (thinkEl) thinkEl.style.display = 'none';
+  }
+
+  // ★ 直接替换答案（不追加），避免重复
+  const textEl = document.getElementById('text-' + msgId);
+  if (textEl) {
+    textEl.style.display = '';
+    state.answer = text;
+    textEl.innerHTML = renderMarkdown(text);
+  }
+  scrollToBottom();
+}
+
+/** ★ 追加流式文本 — 实时打字机效果 */
+function appendStreamText(msgId, text) {
+  const state = streamState[msgId];
+  if (!state || !text) return;
+
+  // 首次收到文本时隐藏 thinking 动画
+  if (state.thinking) {
+    state.thinking = false;
+    const thinkEl = document.getElementById('think-' + msgId);
+    if (thinkEl) thinkEl.style.display = 'none';
+  }
+
+  // 显示并追加文本
+  const textEl = document.getElementById('text-' + msgId);
+  if (textEl) {
+    textEl.style.display = '';
+    if (text.startsWith(state.answer)) {
+      state.answer = text;
+    } else {
+      state.answer += text;
+    }
+    textEl.innerHTML = renderMarkdown(state.answer);
+  }
+  scrollToBottom();
+}
+
+/** 技能加载事件 */
+function addStreamSkill(msgId, event) {
+  const state = streamState[msgId];
+  if (!state) return;
+
+  const skillName = (event.data && event.data.skillName) || event.message || 'unknown';
+  state.skills.push(skillName);
+
+  const container = document.getElementById('skills-' + msgId);
+  if (container) {
+    const badge = document.createElement('span');
+    badge.style.cssText = 'display:inline-block;margin:2px 4px;padding:2px 8px;background:#ecfdf5;color:#065f46;border-radius:10px;font-size:11px';
+    badge.textContent = '📋 ' + skillName;
+    badge.title = '技能已加载';
+    container.appendChild(badge);
+  }
+}
+
+/** 工具调用事件 — 创建工具调用卡片 */
+function addStreamToolCall(msgId, event) {
+  const state = streamState[msgId];
+  if (!state) return;
+
+  const toolName = (event.data && event.data.toolName) || event.message || 'unknown';
+  const input = (event.data && event.data.input) || '';
+  const toolId = 'tc-' + msgId + '-' + state.toolCalls.length;
+
+  state.toolCalls.push({ toolName, input, output: null, toolId });
+
+  const container = document.getElementById('tools-' + msgId);
+  if (container) {
+    const card = document.createElement('div');
+    card.className = 'tool-call-card';
+    card.id = toolId;
+    card.innerHTML = `
+      <div class="tool-call-header" onclick="toggleToolCall('${toolId}-body')">
+        <span class="icon">⏳</span>
+        <strong>${escapeHtml(toolName)}</strong>
+        <span style="margin-left:auto;font-size:10px;color:var(--text-secondary)">执行中...</span>
+      </div>
+      <div class="tool-call-body" id="${toolId}-body">
+        <div style="margin-bottom:4px;font-weight:600">📥 输入:</div>
+        <pre>${escapeHtml(formatJson(input))}</pre>
+        <div style="margin-bottom:4px;font-weight:600">📤 输出:</div>
+        <pre id="${toolId}-output">等待中...</pre>
+      </div>`;
+    container.appendChild(card);
+    scrollToBottom();
+  }
+}
+
+/** 工具结果事件 — 更新已有工具调用卡片 */
+function updateStreamToolResult(msgId, event) {
+  const state = streamState[msgId];
+  if (!state) return;
+
+  const toolName = (event.data && event.data.toolName) || '';
+  const output = (event.data && event.data.output) || '';
+
+  // 找到第一个 output 为 null 的匹配工具调用
+  const tc = state.toolCalls.find(t => t.toolName === toolName && t.output === null);
+  if (tc) {
+    tc.output = output;
+    const card = document.getElementById(tc.toolId);
+    if (card) {
+      const icon = card.querySelector('.icon');
+      if (icon) icon.textContent = '✅';
+      const statusSpan = card.querySelector('.tool-call-header span:last-child');
+      if (statusSpan) statusSpan.textContent = '完成';
+      const outputEl = document.getElementById(tc.toolId + '-output');
+      if (outputEl) outputEl.textContent = formatJson(output);
+    }
+  }
+}
+
+/** ★ 完成流式消息 — 清理中间过程，只保留最终结果和元数据 */
+function finalizeStreamingMessage(msgId, metadata, errorMsg) {
+  const state = streamState[msgId];
+  if (!state) return;
+
+  // ★ 隐藏所有中间过程元素
+  const thinkEl = document.getElementById('think-' + msgId);
+  if (thinkEl) thinkEl.style.display = 'none';
+
+  // ★ 隐藏技能加载徽章（中间过程）
+  const skillsEl = document.getElementById('skills-' + msgId);
+  if (skillsEl) skillsEl.style.display = 'none';
+
+  // ★ 隐藏工具调用卡片（中间过程）
+  const toolsEl = document.getElementById('tools-' + msgId);
+  if (toolsEl) toolsEl.style.display = 'none';
+
+  // 错误处理
+  if (errorMsg) {
+    const textEl = document.getElementById('text-' + msgId);
+    if (textEl) {
+      textEl.style.display = '';
+      textEl.innerHTML = `<span style="color:#ef4444">❌ ${escapeHtml(errorMsg)}</span>`;
+    }
+  }
+
+  // 显示元数据（最终结果摘要）
+  const metaEl = document.getElementById('meta-' + msgId);
+  if (metaEl && metadata) {
+    let metaHtml = '';
+    if (metadata.processingTimeMs) {
+      metaHtml += `<span>⏱ ${metadata.processingTimeMs}ms</span>`;
+    }
+    if (metadata.calledSkills && metadata.calledSkills.length > 0) {
+      metaHtml += `<span>📌 ${escapeHtml(metadata.calledSkills.join(', '))}</span>`;
+    }
+    if (metadata.toolCallCount !== undefined && metadata.toolCallCount > 0) {
+      metaHtml += `<span>🔧 ${metadata.toolCallCount} 次工具调用</span>`;
+    }
+    if (metadata.answerLength !== undefined) {
+      metaHtml += `<span>📝 ${metadata.answerLength} 字符</span>`;
+    }
+    metaEl.innerHTML = metaHtml;
+  }
+
+  // 如果没有收到任何文本且没有错误，显示提示
+  if (!state.answer && !errorMsg) {
+    const textEl = document.getElementById('text-' + msgId);
+    if (textEl) {
+      textEl.style.display = '';
+      textEl.innerHTML = '<span style="color:var(--text-secondary)">（无内容）</span>';
+    }
+  }
+
+  delete streamState[msgId];
+}
+
+// ==================== 兼容旧版非流式（保留 appendAssistantMessage 作为降级方案） ====================
+function appendAssistantMessage(data) {
+  const container = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'message assistant';
+
+  let html = '<div class="avatar">🤖</div><div>';
+
+  // Tool calls
+  if (data.toolCalls && data.toolCalls.length > 0) {
+    html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px">🔧 工具调用:</div>';
+    data.toolCalls.forEach((tc, i) => {
+      const uid = 'tc-' + Date.now() + '-' + i;
+      html += `<div class="tool-call-card">
+        <div class="tool-call-header" onclick="toggleToolCall('${uid}')">
+          <span class="icon">${tc.success ? '✅' : '❌'}</span>
+          <strong>${escapeHtml(tc.toolName)}</strong>
+          <span style="margin-left:auto;font-size:10px;color:var(--text-secondary)">展开 ▾</span>
+        </div>
+        <div class="tool-call-body" id="${uid}">
+          <div style="margin-bottom:4px;font-weight:600">📥 输入:</div>
+          <pre>${escapeHtml(formatJson(tc.input))}</pre>
+          <div style="margin-bottom:4px;font-weight:600">📤 输出:</div>
+          <pre>${escapeHtml(formatJson(tc.output))}</pre>
+          ${tc.error ? `<div style="color:#ef4444">错误: ${escapeHtml(tc.error)}</div>` : ''}
+        </div>
+      </div>`;
+    });
+  }
+
+  // Answer text (render markdown-ish)
+  html += `<div class="bubble">${renderMarkdown(data.answer)}</div>`;
+
+  // Meta
+  html += `<div class="meta">
+    <span>⏱ ${data.processingTimeMs}ms</span>
+    <span>📌 ${escapeHtml(data.matchedSkill || '')}</span>
+  </div>`;
+
+  html += '</div>';
+  div.innerHTML = html;
+  container.appendChild(div);
+  scrollToBottom();
+}
+
+function appendLoading() {
+  const container = document.getElementById('messages');
+  const id = 'loading-' + Date.now();
+  const div = document.createElement('div');
+  div.className = 'message assistant';
+  div.id = id;
+  div.innerHTML = `
+    <div class="avatar">🤖</div>
+    <div class="bubble">
+      <div class="typing"><span></span><span></span><span></span></div>
+    </div>`;
+  container.appendChild(div);
+  scrollToBottom();
+  return id;
+}
+
+function removeLoading(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+// ==================== Helpers ====================
+function handleKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function scrollToBottom() {
+  const container = document.getElementById('messages');
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+  });
+}
+
+function toggleToolCall(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('open');
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatJson(str) {
+  if (!str) return '';
+  try {
+    return JSON.stringify(JSON.parse(str), null, 2);
+  } catch {
+    return str;
+  }
+}
+
+// Simple markdown renderer
+function renderMarkdown(text) {
+  if (!text) return '';
+  let html = escapeHtml(text);
+
+  // Code blocks (`` ... ```)
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+
+  // Headers
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // ★ 改进的表格渲染：按行扫描，识别完整表格块
+  var mdLines = html.split('\n');
+  var mdResult = [];
+  var tableBuffer = [];
+  var inTable = false;
+
+  function flushTable() {
+    if (tableBuffer.length >= 2) {
+      var tableHtml = '<table>';
+      var hCells = tableBuffer[0].split('|').filter(function(c) { return c.trim(); });
+      tableHtml += '<tr>' + hCells.map(function(c) { return '<th>' + c.trim() + '</th>'; }).join('') + '</tr>';
+      for (var i = 2; i < tableBuffer.length; i++) {
+        if (!tableBuffer[i].trim()) continue;
+        var cells = tableBuffer[i].split('|').filter(function(c) { return c.trim(); });
+        tableHtml += '<tr>' + cells.map(function(c) { return '<td>' + c.trim() + '</td>'; }).join('') + '</tr>';
+      }
+      tableHtml += '</table>';
+      mdResult.push(tableHtml);
+    } else {
+      tableBuffer.forEach(function(l) { mdResult.push(l); });
+    }
+    tableBuffer = [];
+    inTable = false;
+  }
+
+  for (var li = 0; li < mdLines.length; li++) {
+    var trimmed = mdLines[li].trim();
+    var isRow = trimmed.charAt(0) === '|' && trimmed.charAt(trimmed.length - 1) === '|';
+    if (isRow) {
+      if (!inTable) { inTable = true; }
+      tableBuffer.push(trimmed);
+    } else {
+      if (inTable) flushTable();
+      mdResult.push(mdLines[li]);
+    }
+  }
+  if (inTable) flushTable();
+  html = mdResult.join('\n');
+
+  // Line breaks
+  html = html.replace(/\n\n/g, '<br><br>');
+  html = html.replace(/\n/g, '<br>');
+
+  return html;
+}
+</script>
+
+</body>
+</html>

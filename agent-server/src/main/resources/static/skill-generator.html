@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<title>Skill Generator — AI Agent</title>
+<style>
+/* ========== Reset & Variables ========== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary: #f5f5f5;
+  --bg-sidebar: #ffffff;
+  --bg-chat: #f9fafb;
+  --bg-user-bubble: #4f6ef6;
+  --bg-assistant-bubble: #ffffff;
+  --text-primary: #1a1a2e;
+  --text-secondary: #6b7280;
+  --text-user-bubble: #ffffff;
+  --border: #e5e7eb;
+  --shadow: 0 1px 3px rgba(0,0,0,.06);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,.08);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --sidebar-width: 240px;
+  --header-height: 56px;
+  --color-stage-1: #3b82f6;
+  --color-stage-2: #8b5cf6;
+  --color-stage-3: #f59e0b;
+  --color-stage-4: #10b981;
+}
+
+/* ========== Layout ========== */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ========== Sidebar ========== */
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-header .logo {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 18px;
+}
+
+.sidebar-header h2 { font-size: 16px; font-weight: 600; }
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.sidebar-section { margin-bottom: 16px; }
+
+.sidebar-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--text-secondary);
+  padding: 8px 8px 6px;
+}
+
+.sidebar-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.sidebar-item:hover { background: #f3f4f6; }
+.sidebar-item.active { background: #ecfdf5; color: #059669; font-weight: 600; }
+
+.sidebar-item .icon { font-size: 16px; }
+
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-secondary);
+  display: flex; align-items: center; gap: 8px;
+}
+
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #10b981;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
+/* ========== Main Area ========== */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-chat);
+  overflow: hidden;
+}
+
+.header {
+  height: var(--header-height);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  background: var(--bg-sidebar);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.header .title { font-size: 15px; font-weight: 600; }
+
+.header .badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px;
+  background: #ecfdf5; color: #059669;
+}
+
+/* ========== Content ========== */
+.content {
+  flex: 1;
+  display: flex;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* ========== Input Panel ========== */
+.input-panel {
+  width: 40%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  min-width: 320px;
+  overflow: hidden;
+}
+
+.input-panel-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.input-panel-header h3 { font-size: 14px; font-weight: 600; }
+
+.input-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+
+.form-group label .optional {
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.form-group textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: inherit;
+  resize: vertical;
+  background: #fff;
+  transition: border-color .2s;
+  min-height: 80px;
+}
+
+.form-group textarea:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.form-group textarea#prd-input { min-height: 200px; }
+.form-group textarea#template-input { min-height: 60px; }
+
+.char-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: right;
+  margin-top: 4px;
+}
+
+.input-panel-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.btn-generate {
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .2s, transform .1s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+
+.btn-generate:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+.btn-generate:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-generate .spinner {
+  width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  display: none;
+}
+
+.btn-generate.loading .spinner { display: block; }
+.btn-generate.loading .btn-text { display: none; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ========== Result Panel ========== */
+.result-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-chat);
+}
+
+.result-panel-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+}
+
+.result-panel-header h3 { font-size: 14px; font-weight: 600; }
+
+.result-actions {
+  display: flex; gap: 6px;
+}
+
+.result-actions button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .15s;
+  display: flex; align-items: center; gap: 4px;
+}
+
+.result-actions button:hover { background: #f3f4f6; }
+.result-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.result-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.result-placeholder {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--text-secondary);
+}
+
+.result-placeholder .icon { font-size: 48px; margin-bottom: 12px; }
+
+.result-placeholder h3 { font-size: 16px; color: var(--text-primary); margin-bottom: 6px; }
+
+.result-placeholder p { font-size: 13px; }
+
+/* ==============================================
+   ★ 执行步骤时间线
+   ============================================== */
+.stage-timeline {
+  display: none;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.stage-timeline.visible {
+  display: block;
+}
+
+.stage-timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.stage-timeline-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stage-timeline-header .elapsed {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-track {
+  position: relative;
+  padding-left: 2px;
+}
+
+.timeline-connector {
+  position: absolute;
+  left: 17px;
+  top: 22px;
+  bottom: 22px;
+  width: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+
+.timeline-connector.done {
+  background: linear-gradient(to bottom, var(--color-stage-1), var(--color-stage-2), var(--color-stage-3), var(--color-stage-4));
+}
+
+.stage-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 8px 0;
+  position: relative;
+  z-index: 1;
+}
+
+.stage-dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+  background: #f3f4f6;
+  border: 2px solid #e5e7eb;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.stage-dot.running {
+  border-color: var(--color-stage-1);
+  background: #eff6ff;
+  animation: dotPulse 1.2s ease-in-out infinite;
+}
+
+.stage-dot.completed {
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+
+.stage-dot.failed {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+@keyframes dotPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+}
+
+.stage-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.stage-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: color 0.3s;
+}
+
+.stage-row.pending .stage-label { color: var(--text-secondary); }
+.stage-row.completed .stage-label { color: #059669; }
+.stage-row.failed .stage-label { color: #ef4444; }
+
+.stage-detail {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  transition: all 0.3s;
+  min-height: 16px;
+  word-break: break-all;
+}
+
+.stage-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.stage-dot-icon {
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.stage-row.pending .stage-dot-icon { opacity: 0.4; }
+.stage-row.running .stage-dot-icon { animation: iconBounce 0.6s ease-in-out infinite; }
+
+@keyframes iconBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+.stage-spinner {
+  display: none;
+  width: 16px; height: 16px;
+  border: 2px solid var(--color-stage-1);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  position: absolute;
+}
+
+.stage-row.running .stage-spinner { display: block; }
+.stage-row.running .stage-dot-icon { opacity: 0; }
+
+/* ========== Result Markdown ========== */
+.result-markdown {
+  background: var(--bg-assistant-bubble);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  font-size: 14px;
+  line-height: 1.7;
+  box-shadow: var(--shadow);
+  display: none;
+}
+
+.result-markdown.visible { display: block; }
+
+.result-markdown h2 { font-size: 18px; margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.result-markdown h3 { font-size: 15px; margin: 12px 0 6px; }
+.result-markdown p { margin: 4px 0; }
+.result-markdown ul, .result-markdown ol { padding-left: 20px; margin: 4px 0; }
+.result-markdown li { margin: 2px 0; }
+.result-markdown code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+.result-markdown pre {
+  background: #1e1e2e; color: #cdd6f4;
+  padding: 12px 16px; border-radius: 8px;
+  overflow-x: auto; font-size: 12px;
+  margin: 8px 0;
+}
+.result-markdown strong { font-weight: 600; }
+.result-markdown table {
+  border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px;
+}
+.result-markdown table th, .result-markdown table td {
+  border: 1px solid #ddd; padding: 6px 10px; text-align: left;
+}
+.result-markdown table th { background: #f9fafb; font-weight: 600; }
+
+.validation-result {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  font-size: 13px;
+  display: none;
+}
+
+.validation-result.visible { display: block; }
+
+.validation-result.success {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.validation-result.failure {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.validation-result ul { margin: 4px 0 0 16px; }
+
+.result-meta {
+  display: flex; gap: 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 16px;
+  display: none;
+}
+
+.result-meta.visible { display: flex; }
+
+/* ========== Responsive ========== */
+@media (max-width: 800px) {
+  .sidebar { display: none; }
+  .content { flex-direction: column; }
+  .input-panel { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid var(--border); }
+  .input-panel-body { max-height: 300px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== Sidebar ==================== -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">⚡</div>
+    <h2>AI Agent</h2>
+  </div>
+
+  <div class="sidebar-body">
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">导航</div>
+      <a href="/" class="sidebar-item">
+        <span class="icon">💬</span> 对话
+      </a>
+      <a href="/skill-generator.html" class="sidebar-item active">
+        <span class="icon">⚡</span> Skill Generator
+      </a>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">MCP 工具</div>
+      <div id="tool-list">
+        <div class="sidebar-item"><span style="color:var(--text-secondary);font-size:12px">加载中...</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">检测中...</span>
+  </div>
+</aside>
+
+<!-- ==================== Main ==================== -->
+<main class="main">
+  <div class="header">
+    <span class="title">⚡ Skill Generator</span>
+    <span class="badge">根据 PRD 自动生成 Skill Markdown</span>
+  </div>
+
+  <div class="content">
+    <!-- Input Panel -->
+    <div class="input-panel">
+      <div class="input-panel-header">
+        <h3>📝 输入</h3>
+      </div>
+      <div class="input-panel-body">
+        <div class="form-group">
+          <label for="prd-input">PRD 需求文档 <span style="color:#ef4444">*</span></label>
+          <textarea id="prd-input" placeholder="在此粘贴您的 PRD 需求文档...&#10;&#10;例如：&#10;开发一个查询城市天气的技能，&#10;用户输入城市名称，&#10;返回当前天气信息（温度、湿度、天气状况、建议）。"
+            oninput="updateCharCount('prd-input', 'prd-count')"></textarea>
+          <div class="char-count" id="prd-count">0 字符</div>
+        </div>
+
+        <div class="form-group">
+          <label for="template-input">Skill 模板 <span class="optional">（可选）</span></label>
+          <textarea id="template-input" placeholder="自定义 Skill 模板，不填则使用默认模板..."
+            oninput="updateCharCount('template-input', 'template-count')"></textarea>
+          <div class="char-count" id="template-count">0 字符</div>
+        </div>
+      </div>
+      <div class="input-panel-footer">
+        <button class="btn-generate" id="generate-btn" onclick="generateSkill()">
+          <span class="spinner"></span>
+          <span class="btn-text">⚡ 生成 Skill</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Result Panel -->
+    <div class="result-panel">
+      <div class="result-panel-header">
+        <h3>📄 生成结果</h3>
+        <div class="result-actions">
+          <button onclick="copyResult()" disabled id="copy-btn">📋 复制</button>
+          <button onclick="downloadResult()" disabled id="download-btn">💾 下载 .md</button>
+        </div>
+      </div>
+      <div class="result-body">
+        <div class="result-placeholder" id="placeholder">
+          <div class="icon">📋</div>
+          <h3>生成 Skill Markdown</h3>
+          <p>在左侧输入 PRD 需求文档，点击「生成 Skill」按钮</p>
+          <p style="margin-top:8px;font-size:12px;color:var(--text-secondary)">
+            系统将自动分析需求，四阶段流水线生成完整的 Skill Markdown 文件
+          </p>
+        </div>
+
+        <!-- ★ 执行步骤时间线 -->
+        <div class="stage-timeline" id="stage-timeline">
+          <div class="stage-timeline-header">
+            <h3>🔍 执行步骤</h3>
+            <span class="elapsed" id="elapsed-time">0.0s</span>
+          </div>
+          <div class="timeline-track">
+            <div class="timeline-connector" id="timeline-connector"></div>
+            <div id="stage-container"></div>
+          </div>
+        </div>
+
+        <div class="validation-result" id="validation-result"></div>
+        <div class="result-markdown" id="result-markdown"></div>
+        <div class="result-meta" id="result-meta"></div>
+        <div class="debug-info" id="debug-info" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:4px 8px;font-size:12px;margin-top:8px;color:#856404"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// =============================================
+// 阶段定义
+// =============================================
+const STAGE_DEFS = [
+  { name: 'decomposePrd',  label: '阶段一：PRD步骤拆解',  icon: '🔍', rowId: 'stage-decomposePrd' },
+  { name: 'resolveTools',  label: '阶段二：MCP工具映射',  icon: '🔧', rowId: 'stage-resolveTools' },
+  { name: 'generateSteps', label: '阶段三：单步生成',    icon: '⚙️', rowId: 'stage-generateSteps' },
+  { name: 'assembleSkill', label: '阶段四：组装与校验',  icon: '📦', rowId: 'stage-assembleSkill' }
+];
+
+let generatedMarkdown = '';
+let isGenerating = false;
+let doneReceived = false;
+let elapsedTimer = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadTools();
+  buildStageRows();
+});
+
+function buildStageRows() {
+  const container = document.getElementById('stage-container');
+  container.innerHTML = STAGE_DEFS.map(def =>
+    '<div class="stage-row pending" id="' + def.rowId + '">' +
+      '<div class="stage-dot">' +
+        '<span class="stage-spinner"></span>' +
+        '<span class="stage-dot-icon">' + def.icon + '</span>' +
+      '</div>' +
+      '<div class="stage-info">' +
+        '<div class="stage-label">' + def.label + '</div>' +
+        '<div class="stage-detail"></div>' +
+      '</div>' +
+      '<div class="stage-time"></div>' +
+    '</div>'
+  ).join('');
+}
+
+async function loadTools() {
+  try {
+    const res = await fetch('/tools').then(r => r.json());
+    const container = document.getElementById('tool-list');
+    if (!res || res.length === 0) {
+      container.innerHTML = '<div class="sidebar-item"><span style="color:var(--text-secondary);font-size:12px">暂无工具</span></div>';
+      return;
+    }
+    container.innerHTML = res.map(t =>
+      '<div class="sidebar-item" title="' + escapeHtml(t.description || '') + '">' +
+        '<span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;flex-shrink:0"></span>' +
+        '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(t.name) + '</span>' +
+      '</div>'
+    ).join('');
+    document.getElementById('status-text').textContent = '已连接 · ' + res.length + ' 工具';
+    document.getElementById('status-dot').style.background = '#10b981';
+  } catch (err) {
+    document.getElementById('status-text').textContent = '连接失败';
+    document.getElementById('status-dot').style.background = '#ef4444';
+  }
+}
+
+function updateCharCount(inputId, countId) {
+  const el = document.getElementById(inputId);
+  const count = el.value.length;
+  document.getElementById(countId).textContent = count + ' 字符';
+}
+
+// =============================================
+// ★ SSE 流式生成 + 时间线
+// =============================================
+async function generateSkill() {
+  if (isGenerating) return;
+
+  const prdContent = document.getElementById('prd-input').value.trim();
+  if (!prdContent) {
+    alert('请输入 PRD 需求文档');
+    return;
+  }
+
+  const template = document.getElementById('template-input').value.trim();
+
+  isGenerating = true;
+  const btn = document.getElementById('generate-btn');
+  btn.classList.add('loading');
+  btn.disabled = true;
+
+  // 重置 UI
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('result-markdown').classList.remove('visible');
+  document.getElementById('result-markdown').innerHTML = '';
+  document.getElementById('validation-result').classList.remove('visible', 'success', 'failure');
+  document.getElementById('validation-result').innerHTML = '';
+  document.getElementById('result-meta').classList.remove('visible');
+  document.getElementById('copy-btn').disabled = true;
+  document.getElementById('download-btn').disabled = true;
+  generatedMarkdown = '';
+
+  // 重置时间线
+  resetTimeline();
+  document.getElementById('stage-timeline').classList.add('visible');
+
+  // 开始计时
+  const startTime = Date.now();
+  elapsedTimer = setInterval(() => {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    document.getElementById('elapsed-time').textContent = elapsed + 's';
+  }, 200);
+
+  doneReceived = false;
+
+  try {
+    const res = await fetch('/skill/generate-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prdContent, template: template || undefined })
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let currentEvent = 'message';
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      // ★ 先处理数据，再判断结束 — 最后一个 chunk 可能 {done:true, value:Uint8Array}
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+      }
+
+      if (done) {
+        // 刷新 decoder 残留字节
+        buffer += decoder.decode();
+        if (buffer.trim()) {
+          const lines = buffer.split('\n').filter(l => l.trim());
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              currentEvent = line.substring(6).trim();
+            } else if (line.startsWith('data:')) {
+              const dataStr = line.substring(5).trim();
+              if (dataStr) {
+                handleSSEEvent(currentEvent, dataStr);
+                currentEvent = 'message';
+              }
+            }
+          }
+        }
+        break;
+      }
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          currentEvent = line.substring(6).trim();
+        } else if (line.startsWith('data:')) {
+          const dataStr = line.substring(5).trim();
+          if (dataStr) {
+            handleSSEEvent(currentEvent, dataStr);
+            currentEvent = 'message';
+          }
+        } else if (line === '') {
+          currentEvent = 'message';
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Skill Generation (SSE) 失败:', err);
+    const validationEl = document.getElementById('validation-result');
+    validationEl.className = 'validation-result failure visible';
+    validationEl.textContent = '❌ 生成失败: ' + err.message;
+    document.getElementById('placeholder').style.display = '';
+    document.getElementById('stage-timeline').classList.remove('visible');
+  } finally {
+    console.log('★ finally: doneReceived=' + doneReceived + ' markdownLen=' + (generatedMarkdown ? generatedMarkdown.length : 0));
+    finalizeTimeline();
+    const debugEl = document.getElementById('debug-info');
+    if (debugEl) {
+      debugEl.style.display = 'block';
+      debugEl.textContent = 'doneReceived=' + doneReceived + ' | markdownLen=' + (generatedMarkdown ? generatedMarkdown.length : 0);
+    }
+    if (!doneReceived) {
+      document.getElementById('placeholder').style.display = 'none';
+      const validationEl = document.getElementById('validation-result');
+      validationEl.className = 'validation-result failure visible';
+      validationEl.textContent = '❌ 未收到服务器的 done 事件，数据丢失';
+    } else if (!generatedMarkdown) {
+      document.getElementById('placeholder').style.display = 'none';
+      const validationEl = document.getElementById('validation-result');
+      validationEl.className = 'validation-result failure visible';
+      validationEl.textContent = '❌ 收到 done 但 markdown 为空';
+    }
+    isGenerating = false;
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  }
+}
+
+function handleSSEEvent(eventName, dataStr) {
+  try {
+    const data = JSON.parse(dataStr);
+    console.log('SSE event:', eventName, data.type, data.message);
+    switch (eventName) {
+      case 'skill_stage':
+        updateTimeline(data);
+        break;
+      case 'done':
+        console.log('★ DONE event received!');
+        onGenerationDone(data);
+        break;
+      case 'error':
+        console.error('SSE error event:', data);
+        onGenerationError(data);
+        break;
+    }
+  } catch (e) {
+    console.error('SSE 解析失败:', e, dataStr.substring(0, 200));
+  }
+}
+
+function resetTimeline() {
+  STAGE_DEFS.forEach(def => {
+    const row = document.getElementById(def.rowId);
+    if (row) {
+      row.className = 'stage-row pending';
+      row.querySelector('.stage-detail').textContent = '';
+      row.querySelector('.stage-time').textContent = '';
+      const dot = row.querySelector('.stage-dot');
+      dot.className = 'stage-dot';
+    }
+  });
+  document.getElementById('timeline-connector').className = 'timeline-connector';
+  document.getElementById('elapsed-time').textContent = '0.0s';
+}
+
+function updateTimeline(eventData) {
+  const data = eventData.data;
+  if (!data || typeof data !== 'object') return;
+
+  const snapshot = data.detail;
+  if (!snapshot || !snapshot.stages) return;
+
+  const stages = snapshot.stages;
+
+  stages.forEach(s => {
+    const def = STAGE_DEFS.find(d => d.name === s.name);
+    if (!def) return;
+    const row = document.getElementById(def.rowId);
+    if (!row) return;
+
+    // 更新行状态
+    row.className = 'stage-row ' + s.status;
+
+    // 更新 dot
+    const dot = row.querySelector('.stage-dot');
+    dot.className = 'stage-dot';
+    if (s.status === 'running') dot.classList.add('running');
+    if (s.status === 'completed') dot.classList.add('completed');
+    if (s.status === 'failed') dot.classList.add('failed');
+
+    // 更新详情
+    const detailEl = row.querySelector('.stage-detail');
+    detailEl.textContent = s.detail || '';
+
+    // 更新耗时
+    const timeEl = row.querySelector('.stage-time');
+    if (s.elapsedMs > 0) {
+      timeEl.textContent = (s.elapsedMs / 1000).toFixed(1) + 's';
+    }
+  });
+
+  // 更新连接线颜色
+  const allDone = stages.every(s => s.status === 'completed');
+  if (allDone) {
+    document.getElementById('timeline-connector').classList.add('done');
+  }
+}
+
+function finalizeTimeline() {
+  STAGE_DEFS.forEach(def => {
+    const row = document.getElementById(def.rowId);
+    if (!row) {
+      console.warn('finalizeTimeline: row not found', def.rowId);
+      return;
+    }
+    row.className = 'stage-row completed';
+    const dot = row.querySelector('.stage-dot');
+    if (dot) {
+      dot.className = 'stage-dot completed';
+    }
+    // 补填空详情
+    const detailEl = row.querySelector('.stage-detail');
+    if (detailEl && !detailEl.textContent) {
+      detailEl.textContent = '已完成';
+    }
+  });
+  const connector = document.getElementById('timeline-connector');
+  if (connector) {
+    connector.className = 'timeline-connector done';
+  }
+}
+
+function onGenerationDone(eventData) {
+  console.log('★ onGenerationDone called', eventData);
+  doneReceived = true;
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+
+  const data = eventData.data;
+  if (!data) {
+    console.error('onGenerationDone: eventData.data is null/undefined');
+    return;
+  }
+
+  generatedMarkdown = data.skillMarkdown || '';
+  console.log('★ skillMarkdown length:', generatedMarkdown.length);
+  if (generatedMarkdown) {
+    console.log('★ markdown start:', generatedMarkdown.substring(0, 200));
+    console.log('★ markdown end:', generatedMarkdown.substring(Math.max(0, generatedMarkdown.length - 200)));
+  }
+
+  document.getElementById('placeholder').style.display = 'none';
+
+  finalizeTimeline();
+
+  const markdownEl = document.getElementById('result-markdown');
+  try {
+    markdownEl.innerHTML = renderMarkdown(generatedMarkdown);
+    console.log('★ renderMarkdown done, innerHTML length:', markdownEl.innerHTML.length);
+  } catch (e) {
+    console.error('★ renderMarkdown 崩溃:', e);
+    markdownEl.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all">' + escapeHtml(generatedMarkdown) + '</pre>';
+  }
+  markdownEl.classList.add('visible');
+
+  const validationEl = document.getElementById('validation-result');
+  if (data.valid) {
+    validationEl.className = 'validation-result success visible';
+    validationEl.textContent = '✅ 格式校验通过 — 所有必需 Section 均已包含';
+  } else {
+    validationEl.className = 'validation-result failure visible';
+    validationEl.innerHTML = '⚠️ 格式校验未通过<ul>' +
+      (data.validationErrors || []).map(e => '<li>' + escapeHtml(e) + '</li>').join('') +
+      '</ul>';
+  }
+
+  const metaEl = document.getElementById('result-meta');
+  metaEl.innerHTML =
+    '<span>⏱ ' + (data.processingTimeMs || 0) + 'ms</span>' +
+    '<span>📝 ' + (generatedMarkdown ? generatedMarkdown.length : 0) + ' 字符</span>';
+  metaEl.classList.add('visible');
+
+  document.getElementById('copy-btn').disabled = false;
+  document.getElementById('download-btn').disabled = false;
+}
+
+function onGenerationError(eventData) {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  const validationEl = document.getElementById('validation-result');
+  validationEl.className = 'validation-result failure visible';
+  validationEl.textContent = '❌ ' + (eventData.message || '生成失败');
+  document.getElementById('stage-timeline').classList.remove('visible');
+  document.getElementById('placeholder').style.display = '';
+}
+
+// =============================================
+// 工具函数
+// =============================================
+function copyResult() {
+  if (!generatedMarkdown) return;
+  navigator.clipboard.writeText(generatedMarkdown).then(() => {
+    const btn = document.getElementById('copy-btn');
+    const orig = btn.textContent;
+    btn.textContent = '✅ 已复制';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(() => {
+    alert('复制失败，请手动复制');
+  });
+}
+
+function downloadResult() {
+  if (!generatedMarkdown) return;
+  const blob = new Blob([generatedMarkdown], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'skill.md';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  let html = escapeHtml(text);
+
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  var mdLines = html.split('\n');
+  var mdResult = [];
+  var tableBuffer = [];
+  var inTable = false;
+
+  function flushTable() {
+    if (tableBuffer.length >= 2) {
+      var tableHtml = '<table>';
+      var hCells = tableBuffer[0].split('|').filter(function(c) { return c.trim(); });
+      tableHtml += '<tr>' + hCells.map(function(c) { return '<th>' + c.trim() + '</th>'; }).join('') + '</tr>';
+      for (var i = 2; i < tableBuffer.length; i++) {
+        if (!tableBuffer[i].trim()) continue;
+        var cells = tableBuffer[i].split('|').filter(function(c) { return c.trim(); });
+        tableHtml += '<tr>' + cells.map(function(c) { return '<td>' + c.trim() + '</td>'; }).join('') + '</tr>';
+      }
+      tableHtml += '</table>';
+      mdResult.push(tableHtml);
+    } else {
+      tableBuffer.forEach(function(l) { mdResult.push(l); });
+    }
+    tableBuffer = [];
+    inTable = false;
+  }
+
+  for (var li = 0; li < mdLines.length; li++) {
+    var trimmed = mdLines[li].trim();
+    var isRow = trimmed.charAt(0) === '|' && trimmed.charAt(trimmed.length - 1) === '|';
+    if (isRow) {
+      if (!inTable) { inTable = true; }
+      tableBuffer.push(trimmed);
+    } else {
+      if (inTable) flushTable();
+      mdResult.push(mdLines[li]);
+    }
+  }
+  if (inTable) flushTable();
+  html = mdResult.join('\n');
+
+  html = html.replace(/\n\n/g, '<br><br>');
+  html = html.replace(/\n/g, '<br>');
+
+  return html;
+}
+</script>
+
+</body>
+</html>

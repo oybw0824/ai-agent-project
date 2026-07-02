@@ -1,0 +1,30 @@
+# ============================================================
+# agent-server 测试配置 — 禁用所有外部依赖
+# ============================================================
+
+spring:
+  ai:
+    openai:
+      api-key: test-mock-key-not-real
+      base-url: http://localhost:9999/mock-openai
+      chat:
+        options:
+          model: deepseek-chat
+
+    mcp:
+      client:
+        enabled: false
+
+    alibaba:
+      mcp:
+        nacos:
+          client:
+            enabled: false           # 测试环境禁用 Nacos MCP 分布式客户端
+
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.mcp.client.common.autoconfigure.McpClientAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpSseClientAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpStreamableClientAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpToolCallbackAutoConfiguration

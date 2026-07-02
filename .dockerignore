@@ -1,0 +1,35 @@
+# Maven build output
+target/
+*.class
+*.jar
+*.war
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Environment
+.env
+*.log
+application-local.yml
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Test artifacts
+.test*
+*.log
