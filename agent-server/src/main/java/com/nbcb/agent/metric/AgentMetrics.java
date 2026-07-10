@@ -1,7 +1,6 @@
 package com.nbcb.agent.metric;
 
 import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
@@ -23,8 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * │   ├─ counter 请求总数 / 成功 / 失败 / 重试
  * │   └─ timer  耗时分布
  * ├─ agent.sse（流式）
- * │   ├─ gauge  活跃会话数
- * │   ├─ counter 连接建立 / 正常关闭 / 超时
+ * │   ├─ counter 连接建立 / 正常关闭 / 超时 / 异常
  * │   └─ timer  会话时长
  * ├─ agent.skill（技能生成）
  * │   ├─ counter 生成总数 / 成功 / 失败
@@ -73,6 +71,9 @@ public class AgentMetrics {
     /** 流式超时关闭数 */
     public final Counter sseTimeout;
 
+    /** 流式异常关闭数 */
+    public final Counter sseError;
+
     /** 流式会话时长 */
     public final Timer sseDuration;
 
@@ -96,12 +97,48 @@ public class AgentMetrics {
     public final Timer skillGenPhaseStepGen;
     public final Timer skillGenPhaseAssembly;
 
+    // ==================== ★ v2 Skill 生成增强指标 ====================
+
+    /** LLM 响应缓存命中数 */
+    public final Counter skillGenCacheHit;
+
+    /** LLM 响应缓存未命中数 */
+    public final Counter skillGenCacheMiss;
+
+    /** LLM 调用重试次数 */
+    public final Counter skillGenRetry;
+
+    /** ★ LLM 调用熔断次数 */
+    public final Counter skillGenCircuitOpen;
+
+    // ==================== Agent 治理指标 ====================
+
+    /** 会话超时终止次数 */
+    public final Counter governanceSessionTimeout;
+
+    /** 模型调用次数超限终止次数 */
+    public final Counter governanceModelCallLimit;
+
+    /** Token 预算超限终止次数 */
+    public final Counter governanceTokenBudget;
+
+    /** 空转检测触发次数 */
+    public final Counter governanceLoopDetect;
+
     // ==================== 工具指标 ====================
 
     /** 各阶段耗时 */
     public final Counter toolCallTotal;
     public final Counter toolCallSuccess;
     public final Counter toolCallFailure;
+
+    // ==================== Nacos 指标 ====================
+
+    /** Nacos 连通性（1=连通，0=断开） */
+    public final AtomicInteger nacosConnected = new AtomicInteger(0);
+
+    /** 已加载技能数 */
+    public final AtomicInteger nacosLoadedSkillCount = new AtomicInteger(0);
 
     public AgentMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -115,6 +152,7 @@ public class AgentMetrics {
         this.sseConnections = buildCounter("agent.sse.connections", "SSE 连接建立数");
         this.sseCompleted = buildCounter("agent.sse.completed", "SSE 正常关闭数");
         this.sseTimeout = buildCounter("agent.sse.timeout", "SSE 超时数");
+        this.sseError = buildCounter("agent.sse.error", "SSE 异常数");
         this.sseDuration = buildTimer("agent.sse.duration", "SSE 会话时长");
 
         this.skillGenTotal = buildCounter("agent.skill.gen.total", "技能生成总数");
@@ -126,6 +164,15 @@ public class AgentMetrics {
         this.skillGenPhaseStepGen = buildTimer("agent.skill.gen.phase.stepgen", "阶段三单步生成耗时");
         this.skillGenPhaseAssembly = buildTimer("agent.skill.gen.phase.assembly", "阶段四组装校验耗时");
 
+        this.skillGenCacheHit = buildCounter("agent.skill.gen.cache.hit", "LLM 响应缓存命中数");
+        this.skillGenCacheMiss = buildCounter("agent.skill.gen.cache.miss", "LLM 响应缓存未命中数");
+        this.skillGenRetry = buildCounter("agent.skill.gen.retry", "LLM 调用重试次数");
+        this.skillGenCircuitOpen = buildCounter("agent.skill.gen.circuit.open", "LLM 调用熔断次数");
+
+        this.governanceSessionTimeout = buildCounter("agent.governance.session.timeout", "会话超时终止次数");
+        this.governanceModelCallLimit = buildCounter("agent.governance.model.call.limit", "模型调用次数超限");
+        this.governanceTokenBudget = buildCounter("agent.governance.token.budget", "Token 预算超限");
+        this.governanceLoopDetect = buildCounter("agent.governance.loop.detect", "空转检测触发次数");
         this.toolCallTotal = buildCounter("agent.tool.call.total", "工具调用总数");
         this.toolCallSuccess = buildCounter("agent.tool.call.success", "工具调用成功数");
         this.toolCallFailure = buildCounter("agent.tool.call.failure", "工具调用失败数");
@@ -133,6 +180,8 @@ public class AgentMetrics {
 
     @PostConstruct
     public void init() {
+        registerGauge("agent.nacos.connected", "Nacos 连通性", nacosConnected);
+        registerGauge("agent.nacos.loaded.skills", "已加载技能数", nacosLoadedSkillCount);
         log.info("★ AgentMetrics 初始化完成 — {} 个指标已注册", registry.getMeters().size());
     }
 
@@ -143,11 +192,16 @@ public class AgentMetrics {
      * @param executor 线程池实例
      */
     public void registerThreadPool(String poolName, ThreadPoolExecutor executor) {
-        registry.gauge("agent.threadpool.queue.size", "pool", poolName, executor, e -> (double) e.getQueue().size());
-        registry.gauge("agent.threadpool.active", "pool", poolName, executor, e -> (double) e.getActiveCount());
-        registry.gauge("agent.threadpool.pool.size", "pool", poolName, executor, e -> (double) e.getPoolSize());
-        registry.gauge("agent.threadpool.completed", "pool", poolName, executor, e -> (double) e.getCompletedTaskCount());
-        registry.gauge("agent.threadpool.max", "pool", poolName, executor, e -> (double) e.getMaximumPoolSize());
+        io.micrometer.core.instrument.Gauge.builder("agent.threadpool.queue.size", executor, e -> (double) e.getQueue().size())
+                .tag("pool", poolName).register(registry);
+        io.micrometer.core.instrument.Gauge.builder("agent.threadpool.active", executor, e -> (double) e.getActiveCount())
+                .tag("pool", poolName).register(registry);
+        io.micrometer.core.instrument.Gauge.builder("agent.threadpool.pool.size", executor, e -> (double) e.getPoolSize())
+                .tag("pool", poolName).register(registry);
+        io.micrometer.core.instrument.Gauge.builder("agent.threadpool.completed", executor, e -> (double) e.getCompletedTaskCount())
+                .tag("pool", poolName).register(registry);
+        io.micrometer.core.instrument.Gauge.builder("agent.threadpool.max", executor, e -> (double) e.getMaximumPoolSize())
+                .tag("pool", poolName).register(registry);
         log.info("★ 线程池 [{}] 监控已注册", poolName);
     }
 
@@ -156,13 +210,6 @@ public class AgentMetrics {
      */
     public void registerGauge(String name, String description, AtomicInteger value) {
         registry.gauge(name, value);
-    }
-
-    /**
-     * ★ 注册基于 Supplier 的 Gauge（适用于动态获取值的场景）
-     */
-    public <T> void registerGauge(String name, String description, T obj, java.util.function.ToDoubleFunction<T> f) {
-        registry.gauge(name, obj, f);
     }
 
     private Counter buildCounter(String name, String description) {

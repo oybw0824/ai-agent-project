@@ -1,0 +1,42 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e6]: ⚡
+    - navigation [ref=e7]:
+      - link "💬" [ref=e8] [cursor=pointer]:
+        - /url: /chat
+        - generic [ref=e9]: 💬
+      - link "⚡" [ref=e10] [cursor=pointer]:
+        - /url: /skill-generator
+        - generic [ref=e11]: ⚡
+      - link "📊" [ref=e12] [cursor=pointer]:
+        - /url: /monitor
+        - generic [ref=e13]: 📊
+    - button "🌙" [ref=e15] [cursor=pointer]:
+      - generic [ref=e16]: 🌙
+  - main [ref=e17]:
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - heading "💬 对话" [level=1] [ref=e21]
+        - button "🗑 清空" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: 🗑 清空
+      - generic [ref=e26]:
+        - heading "👋 AI Agent" [level=1] [ref=e27]
+        - paragraph [ref=e28]: 技能驱动的智能助手 — 按需加载技能，调用 MCP 工具完成任务
+        - generic [ref=e29]:
+          - button "🌤️ 北京今天天气怎么样？" [ref=e30] [cursor=pointer]:
+            - generic [ref=e31]: 🌤️
+            - generic [ref=e32]: 北京今天天气怎么样？
+          - button "🔢 帮我计算 25+36×2 等于多少？" [ref=e33] [cursor=pointer]:
+            - generic [ref=e34]: 🔢
+            - generic [ref=e35]: 帮我计算 25+36×2 等于多少？
+          - button "📊 分析一下销售下滑的原因" [ref=e36] [cursor=pointer]:
+            - generic [ref=e37]: 📊
+            - generic [ref=e38]: 分析一下销售下滑的原因
+          - button "⚡ 帮我生成一个数据分析的 Skill" [ref=e39] [cursor=pointer]:
+            - generic [ref=e40]: ⚡
+            - generic [ref=e41]: 帮我生成一个数据分析的 Skill
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - textbox "输入您的问题，Enter 发送，Shift+Enter 换行..." [ref=e44]
+          - button "➤" [disabled] [ref=e45]
+        - generic [ref=e46]: Enter 发送 · Shift+Enter 换行

@@ -1,6 +1,7 @@
 package com.nbcb.agent.domain;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,8 +21,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class SkillGenerationRequest {
 
-    /** PRD 需求文档内容（必填） */
+    /** PRD 需求文档内容（必填；最大 50KB，防 OOM） */
     @NotBlank(message = "PRD 内容不能为空")
+    @Size(max = 51200, message = "PRD 内容不能超过 51200 字符")
     private String prdContent;
 
     /** MCP Tool Catalog JSON（由 Controller 层自动构建，无需调用方传入） */

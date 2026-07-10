@@ -68,24 +68,57 @@ public class SkillValidator {
         boolean isNewFormat = isNewFormat(markdown);
         boolean isOldFormat = isOldFormat(markdown);
 
-        if (isNewFormat || !isOldFormat) {
+        // ★ 修复：新格式优先，避免新格式内容因包含旧格式关键词而被误判
+        // 新格式判断：YAML frontmatter（--- name:）或 新格式特征词 >=2 个
+        if (isNewFormat) {
             return validateFormat(markdown, NEW_FORMAT_SECTIONS, "四阶段新格式");
-        } else {
+        }
+
+        // 明确的旧格式
+        if (isOldFormat) {
             return validateFormat(markdown, OLD_FORMAT_SECTIONS, "旧格式");
         }
+
+        // 兜底：两个格式特征都不明显，按旧格式关键词判断
+        boolean hasOldFormatHint = markdown.contains("Name") || markdown.contains("Description")
+                || markdown.contains("Workflow") || markdown.contains("Output")
+                || markdown.contains("MCP Tool Calls");
+
+        if (hasOldFormatHint) {
+            return validateFormat(markdown, OLD_FORMAT_SECTIONS, "旧格式");
+        }
+
+        // 最终兜底：默认按新格式校验
+        return validateFormat(markdown, NEW_FORMAT_SECTIONS, "四阶段新格式");
     }
 
     private boolean isNewFormat(String markdown) {
-        return (markdown.startsWith("---") && markdown.contains("name:"))
-                || markdown.contains("详细步骤")
-                || markdown.contains("适用场景")
-                || markdown.contains("工具清单")
-                || markdown.contains("已知缺口")
-                || markdown.contains("执行流程总览");
+        if (markdown.startsWith("---")) {
+            Pattern yamlName = Pattern.compile("^---\\s*\\nname:\\s*[^\\n]+", Pattern.MULTILINE);
+            if (yamlName.matcher(markdown).find()) {
+                return true;
+            }
+        }
+
+        int newFormatScore = 0;
+        if (markdown.contains("详细步骤")) newFormatScore++;
+        if (markdown.contains("适用场景")) newFormatScore++;
+        if (markdown.contains("工具清单")) newFormatScore++;
+        if (markdown.contains("已知缺口")) newFormatScore++;
+        if (markdown.contains("执行流程总览")) newFormatScore++;
+
+        return newFormatScore >= 2;
     }
 
     private boolean isOldFormat(String markdown) {
-        return markdown.contains("Workflow") && markdown.contains("Name");
+        int oldFormatScore = 0;
+        if (markdown.contains("Name")) oldFormatScore++;
+        if (markdown.contains("Description")) oldFormatScore++;
+        if (markdown.contains("Workflow")) oldFormatScore++;
+        if (markdown.contains("MCP Tool Calls")) oldFormatScore++;
+        if (markdown.contains("Output")) oldFormatScore++;
+
+        return oldFormatScore >= 2 && !markdown.startsWith("---");
     }
 
     private ValidationResult validateFormat(String markdown, List<SectionRequirement> sections, String formatName) {

@@ -15,6 +15,33 @@
     <description>智能体服务端 — Nacos 分布式发现 MCP 工具，ReactAgent + DeepSeek</description>
 
     <dependencies>
+        <!-- ★ Agent 开关治理组件 -->
+        <dependency>
+            <groupId>com.nbcb</groupId>
+            <artifactId>agent-governance-starter</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+
+        <!-- ★ 治理组件依赖：MyBatis-Plus（agent-governance-starter 中为 provided scope） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <version>3.5.9</version>
+        </dependency>
+
+        <!-- ★ H2 内存数据库（Mock 测试用，替代 Oracle） -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- ★ AOP 支持（治理组件 AOP 拦截器需要） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -60,6 +87,37 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+
+        <!-- ★ v2: Caffeine 本地缓存（LLM 响应缓存） -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- ★ v2: Spring Retry（LLM 调用重试，编程式 RetryTemplate） -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+
+        <!-- ★ v2: OpenTelemetry 追踪（Micrometer Tracing Bridge，与现有 Micrometer 体系一致） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>

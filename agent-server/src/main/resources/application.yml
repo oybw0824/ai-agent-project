@@ -10,6 +10,22 @@ spring:
   application:
     name: agent-server
 
+  # ==================== 数据库（H2 内存库 — 治理组件配置存储） ====================
+  datasource:
+    url: jdbc:h2:mem:agent_governance;MODE=Oracle;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: false  # ★ H2 控制台默认关闭，调试时 -Dspring.h2.console.enabled=true
+      path: /h2-console
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:sql/h2-schema.sql
+      data-locations: classpath:sql/h2-data.sql
+
   # ==================== DeepSeek Chat Model ====================
   ai:
     openai:
@@ -47,16 +63,20 @@ spring:
                 username: ${NACOS_USERNAME:nacos}
                 password: ${NACOS_PASSWORD:nacos}
 
+# ==================== MyBatis-Plus 配置 ====================
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+      table-prefix: ""
+
 # ==================== Prompt 提示词配置 ====================
-# ★ 以 Nacos 为主，拉取到提示词后自动回写本地 .md 文件保持同步
-# Nacos 不可用时自动降级使用本地文件，保证业务不中断
 prompt:
   local:
-    enabled: true                             # 是否启用本地文件扫描
-    dir: src/main/resources/prompt              # ★ 本地源码目录（Nacos 回写目标，确保与源文件同步）
-    location: classpath:prompt/*.md              # 类路径扫描（启动时读取兜底）
-  nacos:
-    extra-keys:                                 # ★ Nacos 额外 prompt key（逗号分隔，本地不存在但 Nacos 有管理的）
+    enabled: true
+    location: classpath:prompt/*.md
 
 # ==================== 日志 ====================
 logging:
@@ -66,12 +86,87 @@ logging:
 # ==================== Agent 优化配置 ====================
 agent:
   stream:
-    timeout-seconds: 300                          # SSE 流式超时（秒）
+    timeout-seconds: 300
+    max-text-length: 100_000
   retry:
-    max-attempts: 2                               # Agent 调用最大重试次数
-    delay-ms: 1000                                # 重试间隔（毫秒）
-  skill:
-    preload: general-assistant,code-generator,data-analyst,content-creator,document-parser
+    max-attempts: 2
+    delay-ms: 1000
+  cors:
+    allowed-origins: http://localhost:3000,http://localhost:5173
+  thread-pool:
+    sse:
+      core-size: 4
+      max-size: 16
+      queue-capacity: 64
+    skill-gen:
+      core-size: 2
+      max-size: 8
+      queue-capacity: 32
+  skill-gen:
+    merge-phases: false
+    graph:
+      timeout-seconds: 600
+    tool-filter:
+      topN: 15
+      min-english-length: 3
+      min-chinese-length: 2
+    step:
+      batch-size: 5
+      simple-batch-size: 10
+      single-step-timeout-ms: 60000
+      batch-timeout-ms: 180000
+      thread-pool:
+        core-size: 2
+        max-size: 10
+        queue-capacity: 32
+        keep-alive-seconds: 60
+  llm:
+    connect-timeout-ms: 5000
+    read-timeout-ms: 60000
+    retry:
+      max-attempts: 3
+      backoff-initial-ms: 1000
+      backoff-multiplier: 2.0
+      backoff-max-ms: 8000
+    cache:
+      maximum-size: 500
+      ttl-hours: 6
+
+# ==================== Agent 开关治理（缓存 + 限流降级） ====================
+agent-governance:
+  enabled: true
+  cache:
+    ttl-seconds: 30
+    max-size: 2000
+  admin:
+    enabled: true   # ★ 验证阶段临时开启，上线前改为 false
+  max-iterations:
+    default: 8
+    l4-high-risk: 4
+  session-timeout:
+    default-budget-ms: 300000
+    high-risk-budget-ms: 10000
+    minimum-next-step-ms: 1500
+  model-call-limit:
+    default-limit: 20
+    l4-high-risk-limit: 4
+  token-budget:
+    default-max-tokens: 12000
+    l4-high-risk-max-tokens: 8000
+    warning-ratio: 0.8
+  loop-detect:
+    strict-repeat-threshold: 3
+    pattern-window: 8
+    alternating-repeat-threshold: 3
+    stop-after-non-retryable-result: true
+
+# ==================== 工具开关治理配置 ====================
+tool-governance:
+  tools:
+    getWeatherByCity:
+      status: ENABLED
+    calculate:
+      status: ENABLED
 
 # ==================== Actuator & 监控 ====================
 management:

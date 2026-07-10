@@ -2,35 +2,16 @@ package com.nbcb.agent.service;
 
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
+import com.nbcb.agent.domain.AgentChatResponse;
+import com.nbcb.agent.domain.RequestContext;
 import com.nbcb.agent.metric.AgentMetrics;
 import lombok.extern.slf4j.Slf4j;
-import com.nbcb.agent.domain.AgentChatResponse;
-import com.nbcb.agent.domain.ToolCallRecord;
-import com.nbcb.agent.skill.LoggingToolCallback;
-import com.nbcb.agent.skill.NacosSkillRegistry;
-import com.nbcb.agent.util.JsonRetryHelper;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-
 /**
- * Agent 对话编排服务
- * <p>
- * ★ v2.1 架构：LLM 自主匹配技能（非强制指定）
- * <ol>
- *   <li>用户问题直接传入 Agent，不携带 skillId</li>
- *   <li>ReactAgent 内置 SkillsAgentHook → 注入可用技能列表 + 匹配规则到 system prompt</li>
- *   <li>LLM 根据 system prompt 规则，自主匹配并调用 <b>read_skill</b> 加载技能</li>
- *   <li>Agent 按技能指令执行 → 调用 MCP 工具 → 返回结果</li>
- * </ol>
- * <p>
- * 与旧架构的核心区别：
- * <ul>
- *   <li><b>v2.0</b>：用户消息强制携带 skillId（"请使用 {skillId} 技能处理…"）</li>
- *   <li><b>v2.1</b>：用户消息仅含问题文本，LLM 自主匹配技能</li>
- * </ul>
+ * Agent 对话编排服务 — ReactAgent + SkillsAgentHook（read_skill 按需加载）
  *
  * @author com.nbcb
  */
@@ -38,7 +19,7 @@ import java.util.List;
 @Service
 public class AgentService {
 
-    /** ★ 单一 ReactAgent（包含 SkillsAgentHook，处理所有技能） */
+    /** ReactAgent（含 SkillsAgentHook，提供 read_skill 工具） */
     private final ReactAgent agent;
 
     private final AgentMetrics metrics;
@@ -58,24 +39,9 @@ public class AgentService {
 
     /**
      * 处理 Agent 对话请求
-     * <p>
-     * ★ 新流程（v2.1）：
-     * <ol>
-     *   <li>用户问题直接传入 Agent，不强制指定 skillId</li>
-     *   <li>SkillsAgentHook 注入可用技能列表 + read_skill 工具到 system prompt</li>
-     *   <li>LLM 根据 system prompt 中的技能匹配规则，自主选择最适技能</li>
-     *   <li>LLM 通过 read_skill 工具按需加载技能完整指令</li>
-     *   <li>Agent 按技能指令执行 → 调用 MCP 工具 → 返回结果</li>
-     * </ol>
-     * <p>
-     * 与旧架构的关键区别：
-     * <ul>
-     *   <li><b>v2.0</b>：用户消息强制携带 skillId（"请使用 {skillId} 技能处理…"）</li>
-     *   <li><b>v2.1</b>：用户消息仅含问题文本，LLM 自主匹配技能</li>
-     * </ul>
      *
      * @param question 用户问题
-     * @return 对话响应（含工具调用追踪 + LLM 实际调用的技能 + Agent 最终回答）
+     * @return 对话响应（含工具调用追踪 + Agent 最终回答）
      */
     public AgentChatResponse chat(String question) {
         long startTime = System.currentTimeMillis();
@@ -86,63 +52,69 @@ public class AgentService {
         // ★ 用户消息：直接传入问题文本，不强制指定技能
         String userMessage = question;
 
-        // ★ 开启当前线程的工具调用记录
-        LoggingToolCallback.beginRecording();
-        NacosSkillRegistry.beginRecording();
-
-        String answer;
-        List<ToolCallRecord> records;
-        List<String> calledSkills;
-        try {
+        // ★ 使用 try-with-resources 统一管理请求级状态
+        try (RequestContext context = RequestContext.begin(null)) {
             AssistantMessage response = callWithRetry(userMessage);
-            answer = response.getText();
+            String answer = response.getText();
             metrics.chatSuccess.increment();
+
+            long processingTime = System.currentTimeMillis() - startTime;
+            metrics.chatDuration.record(processingTime, java.util.concurrent.TimeUnit.MILLISECONDS);
+
+            log.info("★ Agent 对话完成 — 耗时 {}ms, LLM调用技能: {}, 工具调用 {} 次",
+                    processingTime, context.getCalledSkills(), context.getToolRecords().size());
+
+            return AgentChatResponse.builder()
+                    .question(question)
+                    .matchedSkill(context.getCalledSkills().isEmpty() ? null : context.getCalledSkills().get(0))
+                    .calledSkills(context.getCalledSkills().isEmpty() ? null : context.getCalledSkills())
+                    .toolCalls(context.getToolRecords().isEmpty() ? null : context.getToolRecords())
+                    .answer(answer)
+                    .processingTimeMs(processingTime)
+                    .build();
         } catch (GraphRunnerException e) {
             metrics.chatFailure.increment();
             throw new RuntimeException("Agent 执行异常: " + e.getMessage(), e);
-        } finally {
-            records = LoggingToolCallback.endRecording();
-            calledSkills = NacosSkillRegistry.endRecording();
         }
-
-        long processingTime = System.currentTimeMillis() - startTime;
-        metrics.chatDuration.record(processingTime, java.util.concurrent.TimeUnit.MILLISECONDS);
-
-        log.info("★ Agent 对话完成 — 耗时 {}ms, LLM调用技能: {}, 工具调用 {} 次",
-                processingTime, calledSkills, records.size());
-
-        return AgentChatResponse.builder()
-                .question(question)
-                .matchedSkill(calledSkills.isEmpty() ? null : calledSkills.get(0))
-                .calledSkills(calledSkills.isEmpty() ? null : calledSkills)
-                .toolCalls(records.isEmpty() ? null : records)
-                .answer(answer)
-                .processingTimeMs(processingTime)
-                .build();
     }
 
     /**
-     * 带重试的 Agent 调用，应对 LLM API 瞬时故障（429 / 503 / 超时）
+     * ★ 带分类的重试 — 只重试瞬态错误（429/503/超时/连接），不可重试错误直接抛出
+     * <p>
+     * 重试策略：指数退避（1s → 2s → 4s），避免对 API 服务造成冲击
      */
     private AssistantMessage callWithRetry(String userMessage) throws GraphRunnerException {
         for (int attempt = 0; attempt <= maxRetryAttempts; attempt++) {
             try {
                 if (attempt > 0) {
-                    log.info("★ Agent 重试 {}/{}", attempt, maxRetryAttempts);
+                    long delay = retryDelayMs * (1L << (attempt - 1)); // 指数退避: 1s, 2s, 4s...
+                    log.info("★ Agent 重试 {}/{}（指数退避 {}ms）", attempt, maxRetryAttempts, delay);
                     metrics.chatRetry.increment();
-                    Thread.sleep(retryDelayMs);
+                    Thread.sleep(delay);
                 }
                 return agent.call(userMessage);
             } catch (GraphRunnerException e) {
-                if (attempt >= maxRetryAttempts) {
-                    throw e; // 最后一次也失败，抛出
+                if (!isRetryable(e) || attempt >= maxRetryAttempts) {
+                    throw e;
                 }
-                log.warn("★ Agent 调用失败（将重试）: {}", e.getMessage());
+                log.warn("★ Agent 调用失败（可重试）: {}", e.getMessage());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new GraphRunnerException("Agent 重试被中断", e);
+                throw new RuntimeException("Agent 重试被中断", e);
             }
         }
         throw new GraphRunnerException("Agent 调用失败，已重试 " + maxRetryAttempts + " 次");
+    }
+
+    /**
+     * ★ 判断异常是否可重试（仅对已知的瞬态错误重试）
+     */
+    private boolean isRetryable(Throwable e) {
+        if (e == null) return false;
+        String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+        return msg.contains("429") || msg.contains("503") || msg.contains("502")
+                || msg.contains("504") || msg.contains("timeout") || msg.contains("timed out")
+                || msg.contains("connect") || msg.contains("connection reset")
+                || msg.contains("too many request");
     }
 }

@@ -16,7 +16,6 @@
     <modules>
         <module>mcp-service</module>
         <module>agent-server</module>
-        <module>mcp-nacos-puller</module>
     </modules>
 
     <!-- ==================== Spring Boot 父依赖 ==================== -->

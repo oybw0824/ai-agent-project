@@ -28,3 +28,38 @@ spring:
       - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpSseClientAutoConfiguration
       - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpStreamableClientAutoConfiguration
       - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpToolCallbackAutoConfiguration
+
+# ==================== Agent 限流降级治理测试配置 ====================
+agent-governance:
+  max-iterations:
+    default: 8
+    l4-high-risk: 4
+  session-timeout:
+    default-budget-ms: 15000
+    high-risk-budget-ms: 10000
+    minimum-next-step-ms: 1500
+  model-call-limit:
+    default-limit: 8
+    l4-high-risk-limit: 4
+  token-budget:
+    default-max-tokens: 12000
+    l4-high-risk-max-tokens: 8000
+    warning-ratio: 0.8
+  loop-detect:
+    strict-repeat-threshold: 3
+    pattern-window: 8
+    alternating-repeat-threshold: 3
+    stop-after-non-retryable-result: true
+
+# ==================== 工具开关治理测试配置 ====================
+# ★ 测试环境使用的工具名称，与测试类中 Mock 的工具名一致
+tool-governance:
+  tools:
+    test-enabled-tool:
+      status: ENABLED
+    test-disabled-tool:
+      status: DISABLED
+    getWeatherByCity:
+      status: ENABLED
+    calculate:
+      status: ENABLED

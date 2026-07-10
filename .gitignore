@@ -45,3 +45,13 @@ application-local.yml
 
 ### Playwright MCP artifacts ###
 .playwright-mcp/
+
+### Claude Code / AI tools local config ###
+.claude/
+.codebuddy/
+.workbuddy/
+
+### Vite build output (auto-generated, not committed) ###
+agent-server/src/main/resources/static/
+# Allow hand-crafted static pages
+!agent-server/src/main/resources/static/governance-admin.html

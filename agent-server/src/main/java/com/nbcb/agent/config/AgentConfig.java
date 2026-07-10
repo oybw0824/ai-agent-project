@@ -8,13 +8,24 @@ import com.nbcb.agent.constant.PromptConstant;
 import com.nbcb.agent.domain.StreamEvent;
 import com.nbcb.agent.metric.AgentMetrics;
 import com.nbcb.agent.service.PromptService;
-import com.nbcb.agent.skill.LoggingToolCallback;
-import com.nbcb.agent.skill.NacosSkillLoader;
-import com.nbcb.agent.skill.NacosSkillRegistry;
-import com.nbcb.agent.skill.UnprefixedToolCallbackProvider;
+import com.nbcb.agent.skill.SkillRegistry;
+
+import com.nbcb.agent.governance.AgentGovernanceProperties;
+import com.nbcb.agent.governance.LoopDetectHook;
+import com.nbcb.agent.governance.McpToolRegistrar;
+import com.nbcb.agent.governance.ModelCallLimitHook;
+import com.nbcb.agent.governance.SessionTimeoutBudgetHook;
+import com.nbcb.agent.governance.TokenBudgetHook;
+import com.nbcb.agent.governance.ToolAvailabilityHook;
+import com.nbcb.agent.governance.ToolEventHook;
+import com.nbcb.agent.governance.ToolEventInterceptor;
+import com.nbcb.agent.governance.ToolGovernanceInterceptor;
+import com.nbcb.agent.governance.ToolGovernanceProperties;
+import com.nbcb.agent.governance.ToolGovernanceWrapper;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
+import com.nbcb.agent.skill.UnprefixedToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -23,32 +34,13 @@ import org.springframework.context.annotation.Primary;
 
 import jakarta.annotation.PostConstruct;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Agent 核心配置 — ReactAgent + SkillsAgentHook + MCP 工具
+ * Agent 核心配置 — ReactAgent + SkillsAgentHook + MCP 工具 + 治理 Hook
  * <p>
- * ★ 核心架构变化（v2.0）：
- * <ul>
- *   <li><b>旧（文本注入）</b>：Skill 指令通过 {@code buildAgentMessage()} 拼接到用户消息中</li>
- *   <li><b>新（Hook 注入）</b>：使用框架原生 {@link SkillsAgentHook}，
- *       Agent 通过 {@code read_skill} 工具按需加载技能（渐进式上下文）</li>
- * </ul>
- * <p>
- * 工作流程：
- * <ol>
- *   <li>启动时 → NacosSkillRegistry 加载所有技能 → 转换为框架 SkillMetadata</li>
- *   <li>SkillsAgentHook.beforeAgent() → 将可用技能列表注入 system prompt</li>
- *   <li>LLM 根据用户请求，调用 read_skill("skill-name") 获取完整技能指令</li>
- *   <li>Agent 使用 .tools() 中注册的 MCP 工具 + 按技能指令执行</li>
- * </ol>
- * <p>
- * 工具注册策略：
- * <ul>
- *   <li>MCP 工具直接通过 {@code .tools()} 注册（全部可用）</li>
- *   <li>SkillsAgentHook 通过 {@code .hooks()} 注入 read_skill 工具</li>
- *   <li><b>不使用 groupedTools</b>：避免与 .tools() 中的工具重复注册</li>
- * </ul>
+ * 技能通过框架 SkillsAgentHook 注入：LLM 通过 read_skill 工具按需加载技能完整内容。
  *
  * @author com.nbcb
  */
@@ -57,7 +49,6 @@ import java.util.List;
 public class AgentConfig {
 
     private final ObjectMapper objectMapper;
-
     private final AgentMetrics metrics;
 
     public AgentConfig(ObjectMapper objectMapper, AgentMetrics metrics) {
@@ -65,111 +56,93 @@ public class AgentConfig {
         this.metrics = metrics;
     }
 
-    /** ★ 启动时将 Spring 管理的 ObjectMapper 注入 StreamEvent，确保序列化全局一致 */
     @PostConstruct
     public void initStreamEventMapper() {
         StreamEvent.setObjectMapper(objectMapper);
-        LoggingToolCallback.setMetrics(metrics);
-        log.info("★ StreamEvent ObjectMapper 已注入，LoggingToolCallback 监控已注入");
+        ToolEventInterceptor.setMetrics(metrics);
+        log.info("★ StreamEvent ObjectMapper 已注入，ToolEventInterceptor 监控已注入");
     }
 
-    // ==================== Agent 配置常量 ====================
-
-    /** Agent 名称 */
     private static final String AGENT_NAME = "skill-agent";
-
-    /** Agent 描述 */
-    private static final String AGENT_DESCRIPTION =
-            "基于 Nacos AI Registry 的技能驱动智能助手，使用 read_skill 工具按需加载技能";
-
-    /** Graph 输出 key */
+    private static final String AGENT_DESCRIPTION = "基于 SkillsAgentHook 的技能驱动智能助手";
     private static final String OUTPUT_KEY = "agent_result";
-
-    /** 默认系统提示词（Nacos 和本地文件均不可用时的最终兜底） */
     private static final String FALLBACK_SYSTEM_PROMPT = "你是一个技能驱动的智能助手。";
 
-    // ==================== Bean 定义 ====================
+    /**
+     * ★ 唯一主 ToolCallbackProvider — 解决自动配置产生两个 Bean 的冲突
+     */
     @Bean
     @Primary
-    public ToolCallbackProvider unprefixedMcpTools(
+    public ToolCallbackProvider primaryToolCallbackProvider(
             @Autowired(required = false)
             @Qualifier("distributedAsyncToolCallback") ToolCallbackProvider distributedTools) {
         if (distributedTools != null) {
-            return new UnprefixedToolCallbackProvider(distributedTools);
+            return new com.nbcb.agent.skill.UnprefixedToolCallbackProvider(distributedTools);
         }
         return () -> new ToolCallback[0];
     }
 
-    /**
-     * ★ Nacos 技能注册表 Bean
-     * <p>
-     * 桥接 Nacos AI Registry → 框架 SkillRegistry 接口。
-     * 构造时立即预加载 NacosSkillLoader 中所有已加载的技能。
-     */
     @Bean
-    public NacosSkillRegistry nacosSkillRegistry(NacosSkillLoader skillLoader) {
-        return new NacosSkillRegistry(skillLoader);
+    public ToolGovernanceInterceptor toolGovernanceInterceptor(ToolGovernanceProperties properties) {
+        return new ToolGovernanceInterceptor(properties);
+    }
+
+    @Bean
+    public McpToolRegistrar mcpToolRegistrar(ToolGovernanceProperties properties,
+                                          @Autowired(required = false)
+                                          @Qualifier("primaryToolCallbackProvider") ToolCallbackProvider distributedTools) {
+        return new McpToolRegistrar(properties, distributedTools);
     }
 
     /**
-     * ★ 单一 ReactAgent — 包含 SkillsAgentHook + 全部 MCP 工具
-     * <p>
-     * SkillsAgentHook 提供：
-     * <ul>
-     *   <li><b>read_skill 工具</b> → LLM 按需读取技能完整指令（SKILL.md）</li>
-     *   <li><b>beforeAgent 钩子</b> → 将可用技能列表注入 system prompt</li>
-     * </ul>
-     * <p>
-     * 全量 MCP 工具通过 {@code .tools()} 注册，始终可用。
-     * 不使用 groupedTools（避免工具重复注册）。
-     *
-     * @param chatModel     DeepSeek Chat Model（OpenAI 兼容）
-     * @param mcpTools      去前缀 MCP 工具（分布式发现 → 去掉 m_s_ 前缀）
-     * @param skillRegistry Nacos 技能注册表
-     * @return 配置完成的 ReactAgent
+     * ★ 单一 ReactAgent — SkillsAgentHook + 治理 Hook + MCP 工具
      */
     @Bean
+    @Primary
     public ReactAgent reactAgent(
             ChatModel chatModel,
-            @Autowired(required = false) ToolCallbackProvider mcpTools,
-            NacosSkillRegistry skillRegistry,
-            PromptService promptService) {
+            SkillRegistry skillRegistry,
+            PromptService promptService,
+            ToolGovernanceInterceptor governanceInterceptor,
+            McpToolRegistrar mcpToolRegistrar,
+            AgentGovernanceProperties governanceProperties,
+            ToolGovernanceProperties toolGovernanceProperties,
+            AgentMetrics metrics) {
 
-        // ★ 0. 从 PromptService 获取系统提示词（Nacos 优先 → 本地文件兜底）
         String systemPrompt = promptService.getSystemPrompt(PromptConstant.AGENT_SYSTEM);
-        log.info("★ 系统提示词来源: {}", promptService.isNacosAvailable() ? "Nacos" : "本地文件");
+        if (systemPrompt == null) systemPrompt = FALLBACK_SYSTEM_PROMPT;
 
-        // ★ 1. 全量 MCP 工具（装饰 LoggingToolCallback 用于追踪，记录通过 ThreadLocal 隔离）
-        ToolCallback[] allTools;
-        if (mcpTools != null && mcpTools.getToolCallbacks().length > 0) {
-            allTools = LoggingToolCallback.wrapAll(mcpTools.getToolCallbacks());
-            log.info("已装饰 {} 个 MCP 工具（LoggingToolCallback）", allTools.length);
-        } else {
-            allTools = new ToolCallback[0];
-            log.warn("未检测到 MCP 工具，Agent 将以无工具模式运行");
-        }
+        // ★ 工具：加载 + 治理包装（SSE 事件由 ToolEventInterceptor 统一处理）
+        List<ToolCallback> availableTools = mcpToolRegistrar.loadAvailableTools();
+        ToolCallback[] wrappedTools = availableTools.stream()
+            .map(tool -> new ToolGovernanceWrapper(tool, governanceInterceptor))
+            .toArray(ToolCallback[]::new);
 
-        // ★ 2. 构建 SkillsAgentHook（提供 read_skill 工具 + 技能元数据注入）
+        // ★ SkillsAgentHook：提供 read_skill 工具 + 技能列表注入 system prompt
         SkillsAgentHook skillsHook = SkillsAgentHook.builder()
                 .skillRegistry(skillRegistry)
-                .autoReload(true)       // 每次 beforeAgent 自动 reload（配合 60s 定时刷新）
+                .autoReload(false)  // classpath 技能文件运行时不变，关闭每次请求重新扫描
                 .build();
 
-        log.info("★ SkillsAgentHook 创建完成：{} 个技能", skillsHook.getSkillCount());
+        // ★ 组装 Hook：SkillsAgentHook + 5 个治理 Hook + ToolEventHook（工具事件推送）
+        List<com.alibaba.cloud.ai.graph.agent.hook.Hook> allHooks = new ArrayList<>();
+        allHooks.add(skillsHook);
+        allHooks.add(new SessionTimeoutBudgetHook(governanceProperties, metrics));
+        allHooks.add(new ModelCallLimitHook(governanceProperties, metrics));
+        allHooks.add(new TokenBudgetHook(governanceProperties, metrics));
+        allHooks.add(new ToolAvailabilityHook(toolGovernanceProperties, metrics));
+        allHooks.add(new LoopDetectHook(governanceProperties, metrics));
+        allHooks.add(new ToolEventHook());
 
-        // ★ 3. 构建单一 ReactAgent
-        log.info("构建 ReactAgent：model={}, mcpTools={}, skills={}",
-                chatModel.getClass().getCanonicalName(),
-                allTools.length,
-                skillsHook.getSkillCount());
+        log.info("★ SkillsAgentHook（{}技能）+ {} 治理 Hook（含 ToolEventHook）+ {} 工具 创建完成",
+                skillsHook.getSkillCount(), allHooks.size() - 1, wrappedTools.length);
 
         return ReactAgent.builder()
-                .name(AGENT_NAME)
-                .description(AGENT_DESCRIPTION)
+                .name(AGENT_NAME).description(AGENT_DESCRIPTION)
                 .model(chatModel)
-                .systemPrompt(systemPrompt != null ? systemPrompt : FALLBACK_SYSTEM_PROMPT)
-                .hooks(List.of(skillsHook))
-                .tools(allTools)
+                .systemPrompt(systemPrompt)
+                .hooks(allHooks)
+                .tools(wrappedTools)
                 .outputKey(OUTPUT_KEY)
                 .enableLogging(true)
                 .build();

@@ -32,7 +32,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // ★ SSE 流式请求跳过此过滤器，避免 ContentCachingResponseWrapper 缓冲破坏实时推送
         String uri = request.getRequestURI();
-        return uri.startsWith("/chat/stream") || uri.startsWith("/skill/generate-stream");
+        return uri.contains("/stream") || uri.contains("generate-stream");
     }
 
     @Override

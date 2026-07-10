@@ -5,7 +5,7 @@
     <option name="originalFiles">
       <list>
         <option value="$PROJECT_DIR$/pom.xml" />
-        <option value="$PROJECT_DIR$/mcp-nacos-puller/pom.xml" />
+        <option value="$PROJECT_DIR$/agent-governance-starter/pom.xml" />
       </list>
     </option>
   </component>

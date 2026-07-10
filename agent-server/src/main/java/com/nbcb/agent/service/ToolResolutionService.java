@@ -1,101 +1,152 @@
 package com.nbcb.agent.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nbcb.agent.exception.LlmJsonInvalidException;
+import com.nbcb.agent.service.tool.FeatureExtractor;
+import com.nbcb.agent.service.tool.McpCatalogFilter;
+import com.nbcb.agent.service.tool.ShortCircuitBuilder;
+import com.nbcb.agent.service.tool.ToolScorer;
 import com.nbcb.agent.util.JsonRetryHelper;
+import com.nbcb.agent.util.PromptFormatUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 阶段二：MCP 工具映射服务
  * <p>
- * 给定阶段一拆出来的每个步骤的数据需求，和 Agent 已注册的 MCP 工具清单，
- * 判断每个步骤能不能用现成工具满足。匹配成功则复用现有工具并输出字段映射对照表；
- * 无法匹配则按命名规范自动生成建议工具方案。
+ * 为 PRD 拆解出的每个步骤映射 MCP 工具。匹配成功则复用现有工具并给出字段映射；
+ * 无法匹配则按命名规范自动生成建议工具方案。含第 4 种 match_type「无需工具」识别
+ * （纯逻辑步骤判定）。
  * <p>
- * 匹配的安全边界比"能不能凑出名字"更重要——宁可判定为未匹配走自动生成，
- * 也不要为了"复用率"硬凹一个不准确的匹配。
+ * ★ 优化：对 MCP 工具目录做预过滤，仅将 top-N 个与步骤语义最相关的工具注入 prompt，
+ * 减少上下文压力、提升匹配准确率。
+ * <p>
+ * 走 {@link LlmCallTemplate}（含缓存+超时+重试）；prompt 从 {@link PromptService} 加载
+ * （支持 Nacos 热更新 + 本地兜底），对应 classpath:prompt/skill-resolve-tools.md。
  *
  * @author com.nbcb
  */
 @Slf4j
-@Component
+@Service
 public class ToolResolutionService {
 
-    private final ChatModel chatModel;
+    private final LlmCallTemplate llmCallTemplate;
+    private final PromptService promptService;
     private final ObjectMapper objectMapper;
+    private final StageValidator stageValidator;
 
-    public ToolResolutionService(ChatModel chatModel, ObjectMapper objectMapper) {
-        this.chatModel = chatModel;
+    private static final String PROMPT_KEY = "skill-resolve-tools";
+
+    /** ★ MCP 工具目录预过滤保留的工具数上限 */
+    @Value("${agent.skill-gen.tool-filter.topN:15}")
+    private int toolFilterTopN;
+
+    public ToolResolutionService(LlmCallTemplate llmCallTemplate,
+                                  PromptService promptService,
+                                  ObjectMapper objectMapper,
+                                  StageValidator stageValidator) {
+        this.llmCallTemplate = llmCallTemplate;
+        this.promptService = promptService;
         this.objectMapper = objectMapper;
+        this.stageValidator = stageValidator;
     }
 
-    private static final String RESOLVE_PROMPT = """
-            你是一个 MCP 工具映射专家。把 PRD 拆解出的每个步骤的数据需求，与 Agent 已注册的 MCP 工具清单进行匹配。
-
-            铁律：
-            1. 匹配必须是语义完整覆盖，不是关键词命中。若已注册工具的能力范围不能完整覆盖步骤所需的语义，判定为未匹配。
-            2. 匹配成功必须输出字段映射对照表。逐项写出"PRD语义字段 → 已注册工具实际字段名"的对照。
-            3. 允许多工具组合，但必须拆解清楚每个子数据项具体由哪个工具提供。
-            4. 未匹配时才允许自动生成，且必须显式标记。自动生成的工具名称、入参、出参全部视为「AI建议方案，未注册，需人工实现后接入」。
-            5. 自动生成时优先合并而非新增。若多个步骤的数据需求高度相似（仅参数不同），应合并为一个工具。
-            6. 命名规范：自动生成的工具名统一用 snake_case 形式（如 get_revenue_trend）。
-            7. 不得修改阶段一产出的任何业务判断规则。
-
-            输出格式（仅输出 JSON，不要 markdown 代码块标记）：
-            {
-              "steps": [
-                {
-                  "...原阶段一字段全部原样保留...": "...",
-                  "tool_resolution": {
-                    "match_type": "完整匹配 或 组合匹配 或 未匹配",
-                    "matched_tools": [
-                      {
-                        "tool_name": "已注册工具名",
-                        "field_mapping": [
-                          {"prd_field": "PRD语义字段名", "tool_field": "已注册工具实际字段名", "note": "差异说明"}
-                        ]
-                      }
-                    ],
-                    "is_auto_generated": false,
-                    "auto_generated_tool": {
-                      "tool_name": "建议名称，仅未匹配时填写",
-                      "input": [{"name": "字段名", "type": "类型", "meaning": "含义"}],
-                      "output": [{"name": "字段名", "type": "类型", "meaning": "含义"}],
-                      "reused_from_step": null
-                    }
-                  }
-                }
-              ],
-              "tool_summary": {
-                "matched_existing_tools": ["已复用的已注册工具名列表，去重"],
-                "newly_generated_tools": ["新建议工具名列表，去重"],
-                "steps_with_no_tool_needed": ["纯逻辑计算步骤的step_number"]
-              }
-            }
-
-            阶段一拆解结果：
-            %s
-
-            已注册 MCP 工具清单：
-            %s
-
-            请输出 JSON：""";
-
     /**
-     * 为每个步骤映射 MCP 工具（带 JSON 完整性校验 + 自动重试）
+     * 为每个步骤映射 MCP 工具
      *
-     * @param decompositionJson 阶段一的完整 JSON 输出
-     * @param mcpCatalog        Agent 已注册的 MCP 工具清单 JSON
+     * @param decompositionJson 阶段一 JSON
+     * @param mcpCatalog        MCP 工具清单 JSON
      * @return 阶段二 JSON（含 tool_resolution 和 tool_summary）
+     * @throws LlmJsonInvalidException JSON 解析失败
      */
     public String resolve(String decompositionJson, String mcpCatalog) {
         log.info("★ 阶段二 [工具映射] 开始 — 分解结果长度={} 字符", decompositionJson.length());
 
-        String prompt = String.format(RESOLVE_PROMPT, decompositionJson, mcpCatalog);
-        String json = JsonRetryHelper.callWithRetry(chatModel, objectMapper, prompt, "阶段二 [工具映射]", 2);
+        // ★ 优化2：短路检测 — 若所有步骤均为纯逻辑步骤（tool_input 全空），跳过 LLM 调用
+        String shortCircuitJson = tryShortCircuit(decompositionJson);
+        if (shortCircuitJson != null) {
+            log.info("★ 阶段二 [工具映射] 短路 — 所有步骤均为纯逻辑步骤，跳过 LLM 调用");
+            return shortCircuitJson;
+        }
+
+        String template = promptService.getSystemPrompt(PROMPT_KEY);
+        if (template == null || template.isBlank()) {
+            throw new IllegalStateException("提示词未加载: " + PROMPT_KEY);
+        }
+
+        // ★ MCP 工具目录预过滤：仅保留与步骤语义最相关的 top-N 个工具，降低 prompt 上下文压力
+        String filteredCatalog = filterMcpCatalog(decompositionJson, mcpCatalog);
+
+        // 缓存 key：阶段一结果 + 过滤后 MCP 目录的 sha256（目录变化时缓存自动失效）
+        String cacheKey = LlmCallTemplate.buildCacheKey("resolve", decompositionJson + filteredCatalog);
+
+        // ★ 缓存预检查：命中则跳过 prompt 构建与 LLM 调用，直接复用上次工具映射结果
+        String cachedRaw = llmCallTemplate.peekCache(cacheKey);
+        if (cachedRaw != null) {
+            String json = JsonRetryHelper.extractJson(cachedRaw);
+            if (JsonRetryHelper.isValidJson(objectMapper, json)) {
+                stageValidator.validatePhase2(json);
+                log.info("★ 阶段二 [工具映射] 缓存命中，跳过 LLM 调用 — JSON 长度={} 字符", json.length());
+                return json;
+            }
+            log.warn("★ 阶段二 [工具映射] 缓存内容不可解析，回退完整 LLM 流程");
+        }
+
+        String prompt = PromptFormatUtil.safeFormat(template, decompositionJson, filteredCatalog);
+
+        String response = llmCallTemplate.call(prompt, cacheKey, "阶段二[工具映射]");
+
+        String json = JsonRetryHelper.extractJson(response);
+        if (!JsonRetryHelper.isValidJson(objectMapper, json)) {
+            throw new LlmJsonInvalidException("阶段二 [工具映射] LLM 返回 JSON 无法解析", json);
+        }
+
+        // ★ 阶段间结构化校验：确保阶段三所需的最小字段齐备
+        stageValidator.validatePhase2(json);
 
         log.info("★ 阶段二 [工具映射] 完成 — JSON 长度={} 字符", json.length());
         return json;
+    }
+
+    // ==================== ★ 优化2：阶段二短路 ====================
+
+    /**
+     * ★ 检测是否所有步骤均为纯逻辑步骤（无需任何工具调用），如是则直接合成阶段二 JSON。
+     * <p>
+     * 判定条件：阶段一 JSON 中所有 step 的 tool_input 均为空数组 []。
+     * <p>
+     * 使用 {@link ShortCircuitBuilder} 处理短路逻辑。
+     *
+     * @param decompositionJson 阶段一 JSON
+     * @return 合成 JSON（短路），或 null（需要正常 LLM 流程）
+     */
+    private String tryShortCircuit(String decompositionJson) {
+        return ShortCircuitBuilder.tryShortCircuit(decompositionJson, objectMapper);
+    }
+
+    // ==================== ★ MCP 工具目录预过滤 ====================
+
+    /**
+     * ★ 基于 PRD 特征词从 MCP 目录中筛选 top-N 个语义最相关的工具。
+     * <p>
+     * 使用 {@link McpCatalogFilter} 处理过滤逻辑。
+     *
+     * @param decompositionJson 阶段一 JSON
+     * @param mcpCatalog        MCP 工具目录 JSON
+     * @return 过滤后的 MCP 目录 JSON
+     */
+    String filterMcpCatalog(String decompositionJson, String mcpCatalog) {
+        return McpCatalogFilter.filter(
+                decompositionJson,
+                mcpCatalog,
+                objectMapper,
+                toolFilterTopN
+        );
     }
 }

@@ -6,11 +6,15 @@ import com.nbcb.agent.config.SkillGenerationGraphConfig;
 import com.nbcb.agent.domain.SkillGenerationRequest;
 import com.nbcb.agent.domain.SkillGenerationResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Skill Generation 基于 Spring AI Alibaba Graph 框架的编排服务
@@ -30,6 +34,10 @@ import java.util.Map;
 public class SkillGenerationGraphService {
 
     private final CompiledGraph skillGraph;
+
+    /** ★ Graph 整体超时时间（秒），防止 LLM 卡死导致请求线程永久阻塞 */
+    @Value("${agent.skill-gen.graph.timeout-seconds:600}")
+    private long graphTimeoutSeconds;
 
     public SkillGenerationGraphService(CompiledGraph skillGraph) {
         this.skillGraph = skillGraph;
@@ -72,9 +80,19 @@ public class SkillGenerationGraphService {
             input.put(SkillGenerationGraphConfig.TEMPLATE, request.getTemplate());
         }
 
-        OverAllState finalState = skillGraph.invoke(input).orElseThrow(
-                () -> new IllegalStateException("Graph 执行失败，未返回最终状态")
-        );
+        // ★ 用 CompletableFuture 包装 Graph 执行，设置整体超时控制
+        OverAllState finalState;
+        try {
+            finalState = CompletableFuture
+                    .supplyAsync(() -> skillGraph.invoke(input))
+                    .get(graphTimeoutSeconds, TimeUnit.SECONDS)
+                    .orElseThrow(() -> new IllegalStateException("Graph 执行失败，未返回最终状态"));
+        } catch (TimeoutException e) {
+            throw new RuntimeException(
+                    "Skill Generation Graph 执行超时（" + graphTimeoutSeconds + "秒）", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Skill Generation Graph 执行异常: " + e.getMessage(), e);
+        }
 
         long processingTime = System.currentTimeMillis() - startTime;
 

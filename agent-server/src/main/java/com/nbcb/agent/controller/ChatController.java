@@ -7,11 +7,12 @@ import com.nbcb.agent.domain.ChatRequest;
 import com.nbcb.agent.service.AgentService;
 import com.nbcb.agent.service.AgentStreamService;
 import com.nbcb.agent.service.McpCatalogService;
-import com.nbcb.agent.skill.NacosSkillLoader;
+import com.nbcb.agent.skill.SkillRegistry;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -26,39 +27,35 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
+@RequestMapping("/api/v1")
 public class ChatController {
 
     private final AgentService agentService;
     private final AgentStreamService streamService;
-    private final NacosSkillLoader skillLoader;
+    private final SkillRegistry skillRegistry;
     private final McpCatalogService mcpCatalogService;
 
     public ChatController(AgentService agentService,
                           AgentStreamService streamService,
-                          NacosSkillLoader skillLoader,
+                          SkillRegistry skillRegistry,
                           McpCatalogService mcpCatalogService) {
         this.agentService = agentService;
         this.streamService = streamService;
-        this.skillLoader = skillLoader;
+        this.skillRegistry = skillRegistry;
         this.mcpCatalogService = mcpCatalogService;
     }
 
     /**
-     * 查询当前从 Nacos 加载的所有 Skill 信息
-     *
-     * @return Skill 列表 JSON
+     * 查询当前加载的所有 Skill 信息
      */
     @GetMapping("/skills")
     public Map<String, Object> listSkills() {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("nacosConnected", skillLoader.isNacosAvailable());
-        result.put("source", skillLoader.isNacosAvailable()
-                ? "Nacos 3.2 AI Registry (原生 SDK)"
-                : "Nacos 未连接，使用内置默认 Skill");
-        result.put("skillCount", skillLoader.getLoadedSkillCount());
-        result.put("availableSkillIds", skillLoader.getLoadedSkills());
-        // ★ v2.0: Skill 通过 SkillsAgentHook + read_skill 工具注入（非文本拼接）
-        result.put("mode", "SkillsAgentHook + read_skill");
+        result.put("source", "classpath:skills/*.md");
+        result.put("skillCount", skillRegistry.size());
+        result.put("skills", skillRegistry.listAll().stream()
+                .map(m -> Map.of("name", m.getName(), "description", m.getDescription()))
+                .toList());
         return result;
     }
 
@@ -78,13 +75,7 @@ public class ChatController {
     /**
      * 处理 Agent 对话请求
      * <p>
-     * ★ v2.1 完整链路：
-     * <ol>
-     *   <li>接收用户问题（无需指定 skillId）</li>
-     *   <li>AgentService 直接传入问题 → ReactAgent.call()</li>
-     *   <li>SkillsAgentHook 注入技能列表 + 匹配规则 → LLM 自主选择技能</li>
-     *   <li>LLM 调用 read_skill 加载技能 → Agent 按技能指令执行 → 返回结果</li>
-     * </ol>
+     * 技能已直接注入 system prompt，LLM 无需额外调用即可获取完整指令。
      *
      * @param request 包含 question（必填）的请求体
      * @return ChatResponse 对话响应
@@ -93,7 +84,7 @@ public class ChatController {
     public AgentChatResponse chat(@Valid @RequestBody ChatRequest request) {
         String question = request.getQuestion();
 
-        log.info("收到对话请求，question={}", question);
+        log.info("收到对话请求，questionLen={}", question.length());
         return agentService.chat(question);
     }
 
@@ -129,7 +120,7 @@ public class ChatController {
     public SseEmitter chatStream(@Valid @RequestBody ChatRequest request) {
         String question = request.getQuestion();
 
-        log.info("收到流式对话请求，question={}", question);
+        log.info("收到流式对话请求，questionLen={}", question.length());
         return streamService.streamChat(question);
     }
 }

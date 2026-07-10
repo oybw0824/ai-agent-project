@@ -3,6 +3,8 @@ package com.nbcb.agent.service;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.nbcb.agent.domain.AgentChatResponse;
+import com.nbcb.agent.metric.AgentMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,12 +24,9 @@ import static org.mockito.Mockito.verify;
 /**
  * AgentService 单元测试 — v2.1: LLM 自主匹配技能
  * <p>
- * ★ 与 v2.0 的核心区别：
- * <ul>
- *   <li>chat() 不再接受 skillId 参数 — LLM 根据 system prompt 自主选择</li>
- *   <li>用户消息即原始问题文本，不做任何格式化</li>
- *   <li>响应中 matchedSkill 由 LLM 实际调用的 calledSkills 决定</li>
- * </ul>
+ * ★ 使用 SimpleMeterRegistry 构建真实 AgentMetrics，避免 mock Counter 返回 null。
+ *
+ * @author com.nbcb
  */
 @DisplayName("AgentService 单元测试 (v2.1 LLM自主匹配技能)")
 @ExtendWith(MockitoExtension.class)
@@ -40,7 +39,8 @@ class AgentServiceTest {
 
     @BeforeEach
     void setUp() {
-        agentService = new AgentService(reactAgent);
+        AgentMetrics metrics = new AgentMetrics(new SimpleMeterRegistry());
+        agentService = new AgentService(reactAgent, metrics);
     }
 
     @Test
@@ -52,19 +52,18 @@ class AgentServiceTest {
         AgentChatResponse resp = agentService.chat("检查风险");
 
         assertThat(resp.getAnswer()).contains("风险等级");
-        assertThat(resp.getMatchedSkill()).isNull();  // 无 ThreadLocal → calledSkills 为空
-        // ★ 验证 Agent 收到的消息就是原始问题（不做任何格式化）
+        assertThat(resp.getMatchedSkill()).isNull();
         verify(reactAgent).call(eq("检查风险"));
     }
 
     @Test
-    @DisplayName("ReactAgent 异常 → 向上传播（由全局异常处理器统一处理）")
+    @DisplayName("ReactAgent 异常 → 向上传播")
     void shouldPropagateException() throws GraphRunnerException {
-        doThrow(new RuntimeException("模型超时")).when(reactAgent).call(anyString());
+        doThrow(new GraphRunnerException("模型超时")).when(reactAgent).call(anyString());
 
         assertThatThrownBy(() -> agentService.chat("测试"))
                 .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("模型超时");
+                .hasMessageContaining("Agent 执行异常");
     }
 
     @Test
@@ -83,7 +82,6 @@ class AgentServiceTest {
 
         agentService.chat("今天天气如何");
 
-        // ★ 验证消息就是原始问题，不再有技能提示
         verify(reactAgent).call("今天天气如何");
     }
 }
