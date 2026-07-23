@@ -39,6 +39,30 @@ public interface AgentGovernanceMapper extends BaseMapper<AgentGovernanceEntity>
                 .eq(AgentGovernanceEntity::getOrgId, orgId)));
     }
 
+    default Optional<AgentGovernanceEntity> findGlobalChannelBlock(String channelCode) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<AgentGovernanceEntity>()
+                .eq(AgentGovernanceEntity::getConfigType, AgentGovernanceEntity.TYPE_CHANNEL)
+                .eq(AgentGovernanceEntity::getChannelCode, channelCode)));
+    }
+
+    default Optional<AgentGovernanceEntity> findGlobalUserBlock(String userId) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<AgentGovernanceEntity>()
+                .eq(AgentGovernanceEntity::getConfigType, AgentGovernanceEntity.TYPE_USER)
+                .and(wrapper -> wrapper.isNull(AgentGovernanceEntity::getAgentName)
+                        .or()
+                        .eq(AgentGovernanceEntity::getAgentName, ""))
+                .eq(AgentGovernanceEntity::getUserId, userId)));
+    }
+
+    default Optional<AgentGovernanceEntity> findGlobalOrgBlock(String orgId) {
+        return Optional.ofNullable(selectOne(new LambdaQueryWrapper<AgentGovernanceEntity>()
+                .eq(AgentGovernanceEntity::getConfigType, AgentGovernanceEntity.TYPE_ORG)
+                .and(wrapper -> wrapper.isNull(AgentGovernanceEntity::getAgentName)
+                        .or()
+                        .eq(AgentGovernanceEntity::getAgentName, ""))
+                .eq(AgentGovernanceEntity::getOrgId, orgId)));
+    }
+
     /** 查询所有路由配置 */
     default List<AgentGovernanceEntity> findAllRoutes() {
         return selectList(new LambdaQueryWrapper<AgentGovernanceEntity>()

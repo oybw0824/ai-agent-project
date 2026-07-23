@@ -9,8 +9,8 @@ const expanded = ref(false)
 
 const navItems = [
   { name: 'chat', to: '/chat', icon: '💬', label: '对话' },
+  { name: 'skills', to: '/skills', icon: '🧩', label: 'Skill 管理' },
   { name: 'skill-generator', to: '/skill-generator', icon: '⚡', label: 'Skill 生成' },
-  { name: 'monitor', to: '/monitor', icon: '📊', label: '监控面板' },
 ]
 </script>
 

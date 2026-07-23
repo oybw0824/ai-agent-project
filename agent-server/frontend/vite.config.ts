@@ -28,7 +28,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          chart: ['chart.js'],
           markdown: ['marked'],
         },
       },

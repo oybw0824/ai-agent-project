@@ -1,11 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-const props = withDefaults(defineProps<{ modelValue?: string; type?: 'text'|'textarea'; placeholder?: string; rows?: number; maxlength?: number; disabled?: boolean }>(), { type: 'text', modelValue: '' })
+withDefaults(defineProps<{ modelValue?: string; type?: 'text'|'textarea'; placeholder?: string; rows?: number; maxlength?: number; disabled?: boolean }>(), { type: 'text', modelValue: '' })
 const emit = defineEmits<{ 'update:modelValue': [v: string]; 'keydown': [e: KeyboardEvent] }>()
-const value = computed({
-  get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v),
-})
 function onInput(e: Event) { emit('update:modelValue', (e.target as HTMLTextAreaElement|HTMLInputElement).value) }
 </script>
 <template>

@@ -1,21 +1,21 @@
 package com.nbcb.agent.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nbcb.agent.constant.PromptConstant;
 import com.nbcb.agent.exception.LlmJsonInvalidException;
+import com.nbcb.agent.exception.StageValidationException;
 import com.nbcb.agent.util.JsonRetryHelper;
 import com.nbcb.agent.util.PromptFormatUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * ★ 阶段一/二合并服务（优化3）：一次 LLM 调用同时完成 PRD 拆解 + MCP 工具映射。
- * <p>
- * 替代原来的两阶段串行调用（DecomposePrdService → ToolResolutionService），
- * 消除一次 LLM 往返延迟，一次输出同时包含 decomposition 字段和 tool_resolution 字段。
- * <p>
- * 通过配置开关 {@code agent.skill-gen.merge-phases=true} 启用，
- * 后端用 {@link SkillGenerationGraphConfig#skillGenerationGraphV2}（3 节点 Graph）运行。
+ * PRD 拆解 + MCP 工具映射合并服务 — 一次 LLM 调用同时完成两阶段。
  *
  * @author com.nbcb
  */
@@ -26,66 +26,97 @@ public class DecomposeAndResolveService {
     private final LlmCallTemplate llmCallTemplate;
     private final PromptService promptService;
     private final ObjectMapper objectMapper;
-    private final StageValidator stageValidator;
 
     private static final String PROMPT_KEY = PromptConstant.SKILL_DECOMPOSE_RESOLVE;
 
     public DecomposeAndResolveService(LlmCallTemplate llmCallTemplate,
                                        PromptService promptService,
-                                       ObjectMapper objectMapper,
-                                       StageValidator stageValidator) {
+                                       ObjectMapper objectMapper) {
         this.llmCallTemplate = llmCallTemplate;
         this.promptService = promptService;
         this.objectMapper = objectMapper;
-        this.stageValidator = stageValidator;
     }
 
     /**
-     * 合并执行：PRD 拆解 + MCP 工具映射（1 次 LLM 调用）
+     * PRD 拆解 + MCP 工具映射（1 次 LLM 调用，含短路优化）
      *
-     * @param prdContent   PRD 文档完整原文
-     * @param mcpCatalog   MCP 工具清单 JSON
-     * @return 阶段二格式的 JSON（含 decomposition 字段 + tool_resolution + tool_summary）
-     * @throws LlmJsonInvalidException JSON 解析失败
+     * @param prdContent PRD 文档原文
+     * @param mcpCatalog MCP 工具清单 JSON
+     * @return 含 tool_resolution + tool_summary 的阶段二 JSON
      */
-    public String decomposeAndResolve(String prdContent, String mcpCatalog) {
-        log.info("★ 合并阶段 [拆解+映射] 开始 — PRD 长度={} 字符，MCP 目录长度={} 字符",
-                prdContent.length(), mcpCatalog != null ? mcpCatalog.length() : 0);
+    public String execute(String prdContent, String mcpCatalog) {
+        log.info("★ [拆解+映射] 开始 — PRD={}字符", prdContent.length());
 
         String template = promptService.getSystemPrompt(PROMPT_KEY);
         if (template == null || template.isBlank()) {
             throw new IllegalStateException("提示词未加载: " + PROMPT_KEY);
         }
 
-        // 缓存 key：PRD + MCP 目录的 SHA-256
-        String cacheKey = LlmCallTemplate.buildCacheKey("decompose-resolve",
-                prdContent + (mcpCatalog != null ? mcpCatalog : ""));
+        String catalog = mcpCatalog != null ? mcpCatalog : "[]";
+        String cacheKey = LlmCallTemplate.buildCacheKey("decompose-resolve", prdContent + catalog);
 
         // 缓存预检查
-        String cachedRaw = llmCallTemplate.peekCache(cacheKey);
-        if (cachedRaw != null) {
-            String json = JsonRetryHelper.extractJson(cachedRaw);
-            if (JsonRetryHelper.isValidJson(objectMapper, json)) {
-                stageValidator.validatePhase2(json);
-                log.info("★ 合并阶段 [拆解+映射] 缓存命中 — JSON 长度={} 字符", json.length());
+        String cached = llmCallTemplate.peekCache(cacheKey);
+        if (cached != null) {
+            try {
+                String json = JsonRetryHelper.extractJson(cached);
+                if (!JsonRetryHelper.isValidJson(objectMapper, json)) {
+                    throw new LlmJsonInvalidException("缓存的拆解+映射 JSON 无法解析", json);
+                }
+                validateOutput(json);
+                log.info("★ [拆解+映射] 缓存命中 — JSON={}字符", json.length());
                 return json;
+            } catch (RuntimeException e) {
+                llmCallTemplate.evictCache(cacheKey);
+                log.warn("★ [拆解+映射] 缓存校验失败，已清除并重新调用 LLM: {}", e.getMessage());
             }
-            log.warn("★ 合并阶段 [拆解+映射] 缓存内容不可解析，回退完整 LLM 流程");
         }
 
-        String prompt = PromptFormatUtil.safeFormat(template, prdContent,
-                mcpCatalog != null ? mcpCatalog : "[]");
-
-        String response = llmCallTemplate.call(prompt, cacheKey, "合并阶段[拆解+映射]");
+        String prompt = PromptFormatUtil.safeFormat(template, prdContent, catalog);
+        String response = llmCallTemplate.call(prompt, cacheKey, "拆解+映射");
 
         String json = JsonRetryHelper.extractJson(response);
         if (!JsonRetryHelper.isValidJson(objectMapper, json)) {
-            throw new LlmJsonInvalidException("合并阶段 [拆解+映射] LLM 返回 JSON 无法解析", json);
+            llmCallTemplate.evictCache(cacheKey);
+            throw new LlmJsonInvalidException("拆解+映射 LLM 返回 JSON 无法解析", json);
         }
 
-        stageValidator.validatePhase2(json);
-
-        log.info("★ 合并阶段 [拆解+映射] 完成 — JSON 长度={} 字符", json.length());
+        try {
+            validateOutput(json);
+        } catch (RuntimeException e) {
+            llmCallTemplate.evictCache(cacheKey);
+            throw e;
+        }
+        log.info("★ [拆解+映射] 完成 — JSON={}字符", json.length());
         return json;
     }
+
+    // ==================== 校验 ====================
+
+    private void validateOutput(String json) {
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            List<String> errors = new ArrayList<>();
+
+            JsonNode steps = root.get("steps");
+            if (steps == null || !steps.isArray() || steps.isEmpty())
+                errors.add("steps 字段缺失或为空");
+
+            if (steps != null && steps.isArray()) {
+                for (JsonNode step : steps) {
+                    JsonNode tr = step.get("tool_resolution");
+                    if (tr == null || tr.get("match_type") == null)
+                        errors.add("Step 缺少 tool_resolution.match_type");
+                }
+            }
+            if (root.get("tool_summary") == null)
+                errors.add("tool_summary 字段缺失");
+
+            if (!errors.isEmpty())
+                throw new StageValidationException("校验失败", errors);
+        } catch (JsonProcessingException e) {
+            throw new StageValidationException("JSON 解析失败", List.of(e.getMessage()));
+        }
+    }
+
 }

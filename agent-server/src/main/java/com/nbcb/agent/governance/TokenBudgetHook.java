@@ -4,7 +4,6 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.hook.ModelHook;
 import com.nbcb.agent.exception.AgentEarlyTerminationException;
-import com.nbcb.agent.metric.AgentMetrics;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -39,11 +38,9 @@ public class TokenBudgetHook extends ModelHook {
     private static final java.util.concurrent.ConcurrentHashMap<String, Integer> SESSION_TOKEN_USED = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final AgentGovernanceProperties properties;
-    private final AgentMetrics metrics;
 
-    public TokenBudgetHook(AgentGovernanceProperties properties, AgentMetrics metrics) {
+    public TokenBudgetHook(AgentGovernanceProperties properties) {
         this.properties = properties;
-        this.metrics = metrics;
     }
 
     @Override
@@ -68,9 +65,6 @@ public class TokenBudgetHook extends ModelHook {
         if (estimatedTokens > maxTokens) {
             log.warn("Token 预算超限 [session={}]: used={}, limit={}",
                     sessionId, estimatedTokens, maxTokens);
-            if (metrics != null) {
-                metrics.governanceTokenBudget.increment();
-            }
             throw new AgentEarlyTerminationException(
                     AgentEarlyTerminationException.REASON_TOKEN_BUDGET,
                     "会话 Token 消耗超过预算（" + estimatedTokens + " / " + maxTokens + "）",

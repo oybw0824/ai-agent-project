@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { ref, nextTick, computed, onMounted } from 'vue'
+import { ref, nextTick, onMounted } from 'vue'
 import { useChatStore, type ChatMessage } from '@/stores/chat'
 import { useSSE } from '@/composables/useSSE'
-import type { ChatDoneData, ToolCallData, ToolResultData, SkillLoadData } from '@/types/api'
+import type { ChatDoneData, ToolCallData, ToolResultData, SkillLoadData, StreamEvent } from '@/types/api'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import UButton from '@/components/ui/UButton.vue'
 import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
 
 const store = useChatStore()
-const { start, cancel } = useSSE()
+const { start } = useSSE()
 const input = ref('')
 const abortCtrl = ref<AbortController | null>(null)
 const messagesRef = ref<HTMLElement | null>(null)
@@ -40,7 +40,8 @@ async function send() {
   const ctrl = new AbortController()
   abortCtrl.value = ctrl
 
-  const toolMap = new Map<string, ChatMessage['toolCalls'] extends infer T ? T[number] : never>()
+  type ToolCall = NonNullable<ChatMessage['toolCalls']>[number]
+  const toolMap = new Map<string, ToolCall>()
 
   await start({
     url: '/api/v1/chat/stream',
@@ -57,13 +58,13 @@ async function send() {
           scrollDown()
           break
         case 'skill_load': {
-          const sl = data as unknown as SkillLoadData
+          const sl = data as unknown as StreamEvent<SkillLoadData>
           store.setThinking('')
           if (sl.data?.skillName) store.addSkill(sl.data.skillName)
           break
         }
         case 'tool_call': {
-          const tc = data as unknown as ToolCallData
+          const tc = data as unknown as StreamEvent<ToolCallData>
           store.setThinking('')
           if (tc.data?.toolName) {
             toolMap.set(tc.data.toolName, { toolName: tc.data.toolName, input: tc.data.input || '', status: 'running' })
@@ -72,7 +73,7 @@ async function send() {
           break
         }
         case 'tool_result': {
-          const tr = data as unknown as ToolResultData
+          const tr = data as unknown as StreamEvent<ToolResultData>
           if (tr.data?.toolName) {
             const t = toolMap.get(tr.data.toolName)
             if (t) { t.output = tr.data.output || ''; t.status = 'done' }

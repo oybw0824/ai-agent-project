@@ -7,12 +7,11 @@ import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.nbcb.agent.domain.RequestContext;
 import com.nbcb.agent.domain.StreamEvent;
 import com.nbcb.agent.domain.ToolCallRecord;
-import com.nbcb.agent.metric.AgentMetrics;
 import com.nbcb.agent.service.stream.StreamEventHandler;
 import com.nbcb.agent.service.stream.StreamingTextCollector;
+import com.nbcb.agent.skill.dynamic.DynamicSkillException;
 import com.nbcb.agent.util.SsePushHelper;
 import com.nbcb.agent.util.TextProcessingUtil;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -26,7 +25,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
@@ -34,36 +32,26 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class AgentStreamService {
 
     private final ReactAgent agent;
-    private final AgentMetrics metrics;
     private final ThreadPoolTaskExecutor sseExecutor;
 
     @Value("${agent.stream.timeout-seconds:300}")
     private long streamTimeoutSeconds;
 
-    public AgentStreamService(ReactAgent agent, AgentMetrics metrics,
+    public AgentStreamService(ReactAgent agent,
                               @Qualifier("sseTaskExecutor") ThreadPoolTaskExecutor sseExecutor) {
         this.agent = agent;
-        this.metrics = metrics;
         this.sseExecutor = sseExecutor;
-    }
-
-    @PostConstruct
-    public void init() {
-        metrics.registerThreadPool("sse-agent", sseExecutor.getThreadPoolExecutor());
     }
 
     public SseEmitter streamChat(String question) {
         long startTime = System.currentTimeMillis();
-        metrics.sseConnections.increment();
         log.info("Agent streamChat start, question={}", question);
 
         SseEmitter emitter = new SseEmitter(streamTimeoutSeconds * 1000L);
         emitter.onTimeout(() -> {
-            metrics.sseTimeout.increment();
             log.warn("★ SSE 连接超时 — question={}", question);
         });
         emitter.onError(e -> {
-            metrics.sseError.increment();
             log.warn("★ SSE 连接异常 — question={}", question, e);
         });
         emitter.onCompletion(() -> {
@@ -117,11 +105,9 @@ public class AgentStreamService {
                             context.close(); // ★ 出错时清理 RequestContext
                         })
                         .subscribe(); // ★ 非阻塞订阅，回调中处理完成/错误
+                context.detachCurrentThread();
             } catch (Exception e) {
-                log.error("Agent stream error", e);
-                metrics.sseError.increment();
-                SsePushHelper.push(emitter, StreamEvent.error("error: " + e.getMessage()));
-                emitter.completeWithError(e);
+                handleStreamError(emitter, e);
                 context.close(); // ★ 同步异常时清理
             }
         });
@@ -137,8 +123,13 @@ public class AgentStreamService {
      */
     private void handleStreamError(SseEmitter emitter, Throwable e) {
         log.error("Stream error", e);
-        metrics.sseError.increment();
-        SsePushHelper.push(emitter, StreamEvent.error("Agent error: " + e.getMessage()));
+        DynamicSkillException dynamicSkillException = DynamicSkillException.findCause(e);
+        if (dynamicSkillException != null) {
+            SsePushHelper.push(emitter, StreamEvent.error(
+                    dynamicSkillException.getErrorCode().name(), dynamicSkillException.getMessage()));
+        } else {
+            SsePushHelper.push(emitter, StreamEvent.error("Agent error: " + e.getMessage()));
+        }
         emitter.completeWithError(e);
     }
 
@@ -198,8 +189,6 @@ public class AgentStreamService {
         List<String> calledSkills = ctx != null ? new ArrayList<>(ctx.getCalledSkills()) : List.of();
         long processingTime = System.currentTimeMillis() - startTime;
 
-        metrics.sseCompleted.increment();
-        metrics.sseDuration.record(processingTime, TimeUnit.MILLISECONDS);
 
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("question", question);

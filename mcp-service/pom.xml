@@ -7,30 +7,26 @@
     <parent>
         <groupId>com.nbcb</groupId>
         <artifactId>ai-agent-project</artifactId>
-        <version>1.0.0</version>
+        <version>1.0.17</version>
     </parent>
 
     <artifactId>mcp-service</artifactId>
     <name>mcp-service</name>
-    <description>MCP 工具服务端 — WebFlux STREAMABLE，Extensions Registry 注册到 Nacos</description>
+    <description>Higress HTTP 工具提供服务 — REST API 注册到 Nacos</description>
 
     <dependencies>
-        <!-- MCP Server WebFlux (ASYNC STREAMABLE) -->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-mcp-server-webflux</artifactId>
-        </dependency>
-
-        <!-- Nacos MCP Registry（自动注册工具到 Nacos） -->
-        <dependency>
-            <groupId>com.alibaba.cloud.ai</groupId>
-            <artifactId>spring-ai-alibaba-starter-mcp-registry</artifactId>
-        </dependency>
-
+        <!-- 普通 HTTP API，由 Higress 转换为 MCP -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
+            <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+
+        <!-- 将 HTTP 服务实例自动注册到 Nacos Naming -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+
     </dependencies>
 
     <build>

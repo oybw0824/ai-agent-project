@@ -1,15 +1,13 @@
 package com.nbcb.mcp.tool;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Service;
 
 /**
- * 通用数值计算器 MCP 工具
+ * 通用数值计算器业务服务。
  * <p>
  * 支持基本的四则运算（加减乘除）和括号优先级。
- * 使用安全的表达式解析，避免直接调用 JavaScript 引擎等不安全方式。
+ * 使用安全的表达式解析，通过 HTTP API 暴露后由 Higress 转换为 MCP Tool。
  * <p>
  * 工具调用失败时抛出 {@link IllegalArgumentException}，
  * Spring AI 框架会自动捕获并转换为工具错误响应传递给 Agent。
@@ -23,17 +21,13 @@ public class CalculatorTool {
     /**
      * 执行数值表达式计算
      * <p>
-     * MCP 工具名称：calculate（默认取自方法名）
-     *
      * @param expression 数学表达式，如 "2+3*4"、"(1+2)*3"、"100/4"
      * @return 计算结果字符串，包含原始表达式和结果
      * @throws IllegalArgumentException 当表达式格式非法或包含不支持的运算时
      */
-    @Tool(description = "执行数学表达式计算，支持加减乘除和括号，例如 2+3*4、(1+2)*3")
-    public String calculate(
-            @ToolParam(description = "数学表达式，例如 2+3*4 或 (1+2)*3") String expression) {
+    public String calculate(String expression) {
 
-        log.info("MCP 工具[calculate]被调用，参数 expression={}", expression);
+        log.info("HTTP 计算接口被调用，参数 expression={}", expression);
 
         // 入参校验
         if (expression == null || expression.isBlank()) {
@@ -50,7 +44,7 @@ public class CalculatorTool {
             double result = evaluate(expression);
             String resultStr = String.format(
                     "{\"expression\":\"%s\",\"result\":%s}", expression, result);
-            log.info("MCP 工具[calculate]计算结果：{}", resultStr);
+            log.info("HTTP 计算接口返回结果：{}", resultStr);
             return resultStr;
         } catch (ArithmeticException e) {
             throw new IllegalArgumentException("计算错误：" + e.getMessage(), e);

@@ -1,15 +1,14 @@
 {
   "name": "agent-frontend",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b --noEmit && vite build",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "chart.js": "^4.4.7",
     "dompurify": "^3.4.11",
     "marked": "^15.0.6",
     "pinia": "^2.3.0",

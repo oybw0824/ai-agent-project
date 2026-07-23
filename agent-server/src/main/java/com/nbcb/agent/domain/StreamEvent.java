@@ -194,6 +194,14 @@ public class StreamEvent {
                 .build();
     }
 
+    public static StreamEvent error(String errorCode, String errorMessage) {
+        return StreamEvent.builder()
+                .type(EventType.ERROR)
+                .message(errorMessage)
+                .data(Map.of("code", errorCode))
+                .build();
+    }
+
     public static StreamEvent skillStage(String stageName, String status, Object detail, long elapsedMs, int totalStages) {
         return StreamEvent.builder()
                 .type(EventType.SKILL_STAGE)

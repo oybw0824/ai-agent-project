@@ -4,7 +4,6 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.hook.ModelHook;
 import com.nbcb.agent.exception.AgentEarlyTerminationException;
-import com.nbcb.agent.metric.AgentMetrics;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -36,11 +35,9 @@ import java.util.concurrent.CompletableFuture;
 public class LoopDetectHook extends ModelHook {
 
     private final AgentGovernanceProperties properties;
-    private final AgentMetrics metrics;
 
-    public LoopDetectHook(AgentGovernanceProperties properties, AgentMetrics metrics) {
+    public LoopDetectHook(AgentGovernanceProperties properties) {
         this.properties = properties;
-        this.metrics = metrics;
     }
 
     @Override
@@ -68,9 +65,6 @@ public class LoopDetectHook extends ModelHook {
                     sessionId, recentSignatures.subList(
                             Math.max(0, recentSignatures.size() - strictThreshold),
                             recentSignatures.size()));
-            if (metrics != null) {
-                metrics.governanceLoopDetect.increment();
-            }
             throw new AgentEarlyTerminationException(
                     AgentEarlyTerminationException.REASON_LOOP_DETECT,
                     "检测到连续重复工具调用（已连续 " + strictThreshold + " 次相同调用）",
@@ -81,9 +75,6 @@ public class LoopDetectHook extends ModelHook {
         if (isAlternatingPattern(recentSignatures, altThreshold)) {
             log.warn("检测到交替模式空转 [session={}]: signatures={}",
                     sessionId, recentSignatures);
-            if (metrics != null) {
-                metrics.governanceLoopDetect.increment();
-            }
             throw new AgentEarlyTerminationException(
                     AgentEarlyTerminationException.REASON_LOOP_DETECT,
                     "检测到交替模式空转（工具调用陷入 A→B→A→B 循环）",
@@ -94,9 +85,6 @@ public class LoopDetectHook extends ModelHook {
         if (properties.getLoopDetect().isStopAfterNonRetryableResult()
                 && hasRepeatedCallAfterNonRetryableResult(state)) {
             log.warn("检测到不可重试结果后仍调用同一工具 [session={}]", sessionId);
-            if (metrics != null) {
-                metrics.governanceLoopDetect.increment();
-            }
             throw new AgentEarlyTerminationException(
                     AgentEarlyTerminationException.REASON_LOOP_DETECT,
                     "工具已返回不可重试结果，停止继续尝试",

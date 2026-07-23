@@ -7,15 +7,17 @@
     <!-- ==================== 父 POM 坐标 ==================== -->
     <groupId>com.nbcb</groupId>
     <artifactId>ai-agent-project</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.17</version>
     <packaging>pom</packaging>
     <name>ai-agent-project</name>
     <description>AI Agent 项目 - MCP 工具服务 + 智能体服务</description>
 
     <!-- ==================== 子模块 ==================== -->
     <modules>
+        <module>agent-governance-starter</module>
         <module>mcp-service</module>
         <module>agent-server</module>
+        <module>nacos-mcp-agent</module>
     </modules>
 
     <!-- ==================== Spring Boot 父依赖 ==================== -->
@@ -34,14 +36,35 @@
         <spring-ai.version>1.1.2</spring-ai.version>
         <spring-ai-alibaba.version>1.1.2.2</spring-ai-alibaba.version>
         <spring-ai-alibaba-extensions.version>1.1.2.1</spring-ai-alibaba-extensions.version>
+        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
 
         <!-- Nacos 客户端版本（覆盖 SCA BOM 中的 3.0.3） -->
         <nacos-client.version>3.2.2</nacos-client.version>
+        <mybatis-plus.version>3.5.14</mybatis-plus.version>
     </properties>
 
     <!-- ==================== 统一依赖版本管理 ==================== -->
     <dependencyManagement>
         <dependencies>
+            <!-- Spring Cloud BOM -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Spring Cloud Alibaba BOM -->
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
             <!-- Spring AI BOM -->
             <dependency>
                 <groupId>org.springframework.ai</groupId>
@@ -74,6 +97,11 @@
                 <groupId>com.alibaba.nacos</groupId>
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos-client.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

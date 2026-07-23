@@ -3,8 +3,8 @@ package com.nbcb.agent.domain;
 /**
  * ★ Graph 阶段进度事件 — 解耦进度上报与 Graph 节点
  * <p>
- * 替代原先通过静态方法 SkillGenerationProgress.get() 的紧耦合方式。
- * 监听方（如 SSE 推送、SkillGenerationProgress）通过 Spring Event 机制异步接收。
+ * 替代静态进度存储的紧耦合方式。
+ * 监听方（如 SkillGenerationController）通过 Spring Event 机制接收。
  *
  * @author com.nbcb
  */

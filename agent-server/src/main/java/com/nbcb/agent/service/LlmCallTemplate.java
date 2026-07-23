@@ -1,18 +1,23 @@
 package com.nbcb.agent.service;
 
 import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.nbcb.agent.exception.LlmCallException;
-import com.nbcb.agent.metric.AgentMetrics;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.retry.backoff.ExponentialBackOffPolicy;
+import org.springframework.retry.policy.SimpleRetryPolicy;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinPool;
@@ -21,12 +26,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * LLM 统一调用模板 — 包装 ChatModel，提供超时 + 重试 + 缓存 + 指标
+ * LLM 统一调用模板 — 包装 ChatModel，提供超时 + 重试 + 缓存
  * <p>
  * 设计原则：
  * <ol>
  *   <li>不替换 ChatModel Bean（ReactAgent 仍用原始 ChatModel，不受影响）</li>
- *   <li>Skill 生成四阶段改走 LlmCallTemplate 获得超时+重试+缓存能力</li>
+ *   <li>Skill 生成中的 LLM 阶段统一获得超时、重试和缓存能力</li>
  *   <li>同步 call() 缓存</li>
  *   <li>重试只针对连接/超时类异常，JSON 解析错误由 JsonRetryHelper 单独处理</li>
  * </ol>
@@ -40,7 +45,6 @@ public class LlmCallTemplate {
     private final ChatModel chatModel;
     private final Cache<String, String> cache;
     private final RetryTemplate retryTemplate;
-    private final AgentMetrics metrics;
     private final long totalTimeoutMs;
 
     /** ★ 轻量熔断器：连续失败次数 + 熔断半开时间 */
@@ -53,13 +57,11 @@ public class LlmCallTemplate {
     public LlmCallTemplate(ChatModel chatModel,
                             Cache<String, String> cache,
                             RetryTemplate retryTemplate,
-                            AgentMetrics metrics,
                             @Value("${agent.llm.connect-timeout-ms:5000}") int connectTimeoutMs,
                             @Value("${agent.llm.read-timeout-ms:60000}") int readTimeoutMs) {
         this.chatModel = chatModel;
         this.cache = cache;
         this.retryTemplate = retryTemplate;
-        this.metrics = metrics;
         this.totalTimeoutMs = connectTimeoutMs + readTimeoutMs;
         log.info("★ LlmCallTemplate 初始化 — connectTimeout={}ms, readTimeout={}ms, totalTimeout={}ms",
                 connectTimeoutMs, readTimeoutMs, totalTimeoutMs);
@@ -68,11 +70,11 @@ public class LlmCallTemplate {
     // ==================== 同步调用（阶段一/二/四） ====================
 
     /**
-     * 同步 LLM 调用（带缓存 + 超时 + 重试 + 指标）
+     * 同步 LLM 调用（带缓存 + 超时 + 重试）
      *
      * @param prompt    完整提示词
      * @param cacheKey  缓存 key（null 表示不缓存）
-     * @param stageName 阶段名称（日志/指标用）
+     * @param stageName 阶段名称（日志用）
      * @return LLM 响应文本
      * @throws LlmCallException 超时或重试耗尽
      */
@@ -83,11 +85,9 @@ public class LlmCallTemplate {
         if (cacheKey != null) {
             String cached = cache.getIfPresent(cacheKey);
             if (cached != null) {
-                metrics.skillGenCacheHit.increment();
                 log.info("★ {} 缓存命中, cacheKey={}", stageName, cacheKey.substring(0, Math.min(20, cacheKey.length())));
                 return cached;
             }
-            metrics.skillGenCacheMiss.increment();
         }
 
         // 2. ★ 熔断检查：OPEN 状态快速失败
@@ -99,9 +99,6 @@ public class LlmCallTemplate {
         String result;
         try {
             result = retryTemplate.execute(context -> {
-                if (context.getRetryCount() > 0) {
-                    metrics.skillGenRetry.increment();
-                }
                 return callWithTimeout(prompt, stageName);
             });
             // ★ 成功：重置熔断器
@@ -139,7 +136,6 @@ public class LlmCallTemplate {
         }
         log.warn("★ Circuit Breaker OPEN — 拒绝调用（连续失败 {} 次，{}ms 后重试）",
                 failures, openUntil - now);
-        metrics.skillGenCircuitOpen.increment();
         return true;
     }
 
@@ -203,8 +199,7 @@ public class LlmCallTemplate {
     /**
      * 探测缓存是否命中（不触发 LLM 调用），供阶段层做缓存预检查以跳过 prompt 构建开销。
      * <p>
-     * 命中时计入 cacheHit 指标并返回缓存值；未命中返回 null（不计指标，
-     * 后续由 {@link #call} 统一计入 cacheMiss）。
+     * 命中时直接返回缓存值；未命中返回 null。
      *
      * @param cacheKey 缓存 key（null 表示不缓存，直接返回 null）
      * @return 缓存的原始响应，或 null（未命中）
@@ -215,12 +210,20 @@ public class LlmCallTemplate {
         }
         String cached = cache.getIfPresent(cacheKey);
         if (cached != null) {
-            metrics.skillGenCacheHit.increment();
             log.info("★ 缓存预检查命中, cacheKey={}",
                     cacheKey.substring(0, Math.min(20, cacheKey.length())));
             return cached;
         }
         return null;
+    }
+
+    /**
+     * 移除未通过业务校验的缓存响应，避免格式错误的 LLM 输出持续污染后续请求。
+     */
+    public void evictCache(String cacheKey) {
+        if (cacheKey != null) {
+            cache.invalidate(cacheKey);
+        }
     }
 
     /**
@@ -240,6 +243,38 @@ public class LlmCallTemplate {
             return HexFormat.of().formatHex(hash);
         } catch (Exception e) {
             return Integer.toHexString(input.hashCode());
+        }
+    }
+
+    // ==================== Bean 定义 ====================
+
+    @Configuration
+    public static class Config {
+        @Bean
+        public Cache<String, String> llmCache(
+                @Value("${agent.llm.cache.maximum-size:500}") int maxSize,
+                @Value("${agent.llm.cache.ttl-hours:6}") int ttlHours) {
+            return Caffeine.newBuilder()
+                    .maximumSize(maxSize)
+                    .expireAfterWrite(Duration.ofHours(ttlHours))
+                    .recordStats()
+                    .build();
+        }
+
+        @Bean
+        public RetryTemplate llmRetryTemplate(
+                @Value("${agent.llm.retry.max-attempts:3}") int maxAttempts,
+                @Value("${agent.llm.retry.backoff-initial-ms:1000}") long initial,
+                @Value("${agent.llm.retry.backoff-multiplier:2.0}") double multiplier,
+                @Value("${agent.llm.retry.backoff-max-ms:8000}") long max) {
+            RetryTemplate template = new RetryTemplate();
+            template.setRetryPolicy(new SimpleRetryPolicy(maxAttempts));
+            ExponentialBackOffPolicy backOff = new ExponentialBackOffPolicy();
+            backOff.setInitialInterval(initial);
+            backOff.setMultiplier(multiplier);
+            backOff.setMaxInterval(max);
+            template.setBackOffPolicy(backOff);
+            return template;
         }
     }
 }

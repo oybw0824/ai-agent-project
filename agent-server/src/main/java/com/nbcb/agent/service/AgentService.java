@@ -4,7 +4,7 @@ import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.nbcb.agent.domain.AgentChatResponse;
 import com.nbcb.agent.domain.RequestContext;
-import com.nbcb.agent.metric.AgentMetrics;
+import com.nbcb.agent.skill.dynamic.DynamicSkillException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,8 +22,6 @@ public class AgentService {
     /** ReactAgent（含 SkillsAgentHook，提供 read_skill 工具） */
     private final ReactAgent agent;
 
-    private final AgentMetrics metrics;
-
     /** 最大重试次数（应对 LLM API 瞬时故障） */
     @Value("${agent.retry.max-attempts:2}")
     private int maxRetryAttempts;
@@ -32,9 +30,8 @@ public class AgentService {
     @Value("${agent.retry.delay-ms:1000}")
     private long retryDelayMs;
 
-    public AgentService(ReactAgent agent, AgentMetrics metrics) {
+    public AgentService(ReactAgent agent) {
         this.agent = agent;
-        this.metrics = metrics;
     }
 
     /**
@@ -45,7 +42,6 @@ public class AgentService {
      */
     public AgentChatResponse chat(String question) {
         long startTime = System.currentTimeMillis();
-        metrics.chatTotal.increment();
 
         log.info("★ Agent 对话开始 — question={}", question);
 
@@ -56,10 +52,7 @@ public class AgentService {
         try (RequestContext context = RequestContext.begin(null)) {
             AssistantMessage response = callWithRetry(userMessage);
             String answer = response.getText();
-            metrics.chatSuccess.increment();
-
             long processingTime = System.currentTimeMillis() - startTime;
-            metrics.chatDuration.record(processingTime, java.util.concurrent.TimeUnit.MILLISECONDS);
 
             log.info("★ Agent 对话完成 — 耗时 {}ms, LLM调用技能: {}, 工具调用 {} 次",
                     processingTime, context.getCalledSkills(), context.getToolRecords().size());
@@ -73,7 +66,10 @@ public class AgentService {
                     .processingTimeMs(processingTime)
                     .build();
         } catch (GraphRunnerException e) {
-            metrics.chatFailure.increment();
+            DynamicSkillException dynamicSkillException = DynamicSkillException.findCause(e);
+            if (dynamicSkillException != null) {
+                throw dynamicSkillException;
+            }
             throw new RuntimeException("Agent 执行异常: " + e.getMessage(), e);
         }
     }
@@ -89,7 +85,6 @@ public class AgentService {
                 if (attempt > 0) {
                     long delay = retryDelayMs * (1L << (attempt - 1)); // 指数退避: 1s, 2s, 4s...
                     log.info("★ Agent 重试 {}/{}（指数退避 {}ms）", attempt, maxRetryAttempts, delay);
-                    metrics.chatRetry.increment();
                     Thread.sleep(delay);
                 }
                 return agent.call(userMessage);

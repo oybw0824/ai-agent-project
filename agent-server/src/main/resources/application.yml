@@ -1,6 +1,6 @@
 # ============================================================
 # agent-server — 智能体服务端 配置文件
-# MCP 工具从 Nacos AI Registry 分布式发现（STREAMABLE 协议）
+# MCP 工具从 Higress AI 网关拉取（STREAMABLE 协议）
 # ============================================================
 
 server:
@@ -39,29 +39,16 @@ spring:
     # ==================== MCP Client ====================
     mcp:
       client:
-        enabled: true
+        enabled: ${HIGRESS_MCP_ENABLED:true}
         name: agent-server
         version: 1.0.0
         request-timeout: 600s
         type: ASYNC
-
-    # ==================== ★ Nacos MCP 分布式客户端 ====================
-    alibaba:
-      mcp:
-        nacos:
-          client:
-            enabled: true
-            streamable:
-              connections:
-                server1:
-                  service-name: mcp-service
-                  version: 1.1.0
-            configs:
-              server1:
-                namespace: ${NACOS_NAMESPACE:public}
-                server-addr: ${NACOS_ADDR:127.0.0.1:8848}
-                username: ${NACOS_USERNAME:nacos}
-                password: ${NACOS_PASSWORD:nacos}
+        streamable-http:
+          connections:
+            higress-tools:
+              url: ${HIGRESS_MCP_BASE_URL:http://127.0.0.1:8080}
+              endpoint: ${HIGRESS_MCP_ENDPOINT:/mcp-servers/mcp-service}
 
 # ==================== MyBatis-Plus 配置 ====================
 mybatis-plus:
@@ -85,6 +72,10 @@ logging:
 
 # ==================== Agent 优化配置 ====================
 agent:
+  skill:
+    dynamic:
+      agent-name: skill-agent
+      nas-root: ${SKILL_NAS_ROOT:/nas/skills}
   stream:
     timeout-seconds: 300
     max-text-length: 100_000
@@ -103,16 +94,10 @@ agent:
       max-size: 8
       queue-capacity: 32
   skill-gen:
-    merge-phases: false
     graph:
       timeout-seconds: 600
-    tool-filter:
-      topN: 15
-      min-english-length: 3
-      min-chinese-length: 2
     step:
-      batch-size: 5
-      simple-batch-size: 10
+      batch-size: 8
       single-step-timeout-ms: 60000
       batch-timeout-ms: 180000
       thread-pool:
@@ -131,6 +116,13 @@ agent:
     cache:
       maximum-size: 500
       ttl-hours: 6
+
+# ★ 工具结果缓存（避免 LLM 同一会话中重复调用相同工具+相同入参）
+  tool-cache:
+    max-size: 500
+    ttl-seconds: 300
+    # 仅配置确认无副作用且允许短期复用结果的工具；默认不缓存。
+    cacheable-tools: calculate
 
 # ==================== Agent 开关治理（缓存 + 限流降级） ====================
 agent-governance:
@@ -167,20 +159,3 @@ tool-governance:
       status: ENABLED
     calculate:
       status: ENABLED
-
-# ==================== Actuator & 监控 ====================
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-    tags:
-      application: ${spring.application.name:agent-server}
-  endpoint:
-    health:
-      show-details: always
-      show-components: always

@@ -7,7 +7,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * ★ 请求级上下文管理器 — ThreadLocal + ConcurrentHashMap 双层查找
@@ -24,8 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * ★ 跨线程机制：
  * <ol>
  *   <li>{@link #CURRENT} ThreadLocal — 同线程（sseExecutor 回调线程）直接命中</li>
- *   <li>{@link #FALLBACK} AtomicReference — 跨线程快速 fallback（工具调用线程）</li>
- *   <li>{@link #REGISTRY} ConcurrentHashMap&lt;UUID, Context&gt; — 多请求隔离，防止并发泄漏</li>
+ *   <li>{@link #REGISTRY} ConcurrentHashMap&lt;UUID, Context&gt; — 仅在唯一活动请求时跨线程降级</li>
  * </ol>
  *
  * @author com.nbcb
@@ -36,9 +34,6 @@ public class RequestContext implements AutoCloseable {
 
     /** ★ 同线程上下文（sseExecutor 线程 → doOnNext/doOnComplete 回调） */
     private static final ThreadLocal<RequestContext> CURRENT = new ThreadLocal<>();
-
-    /** ★ 跨线程快速 fallback（工具调用在 boundedElastic 线程，非阻塞场景足够） */
-    private static final AtomicReference<RequestContext> FALLBACK = new AtomicReference<>();
 
     /**
      * ★ 请求级注册表 — 每个请求分配 UUID，防止并发请求间上下文泄漏
@@ -72,7 +67,7 @@ public class RequestContext implements AutoCloseable {
     }
 
     /**
-     * ★ 开始新请求，生成唯一 requestId 并注册到三层存储
+     * ★ 开始新请求，生成唯一 requestId 并注册到上下文存储
      *
      * @param emitter SSE 发射器（非流式时为 null）
      * @return RequestContext 实例
@@ -81,15 +76,15 @@ public class RequestContext implements AutoCloseable {
         String requestId = UUID.randomUUID().toString();
         RequestContext ctx = new RequestContext(requestId, emitter);
         CURRENT.set(ctx);
-        FALLBACK.set(ctx);
         REGISTRY.put(requestId, ctx);
         return ctx;
     }
 
     /**
-     * ★ 获取当前请求的上下文（三层查找：ThreadLocal → FALLBACK → REGISTRY）
+     * ★ 获取当前请求的上下文（ThreadLocal → 唯一活动请求降级）
      * <p>
-     * REGISTRY 兜底确保并发请求不会泄漏到错误的 emitter。
+     * 并发请求下如果调用线程没有显式上下文，则返回 null。宁可少记录一次事件，
+     * 也不能把工具轨迹或 SSE 数据写入其他用户的请求。
      *
      * @return 当前请求的 RequestContext，可能为 null
      */
@@ -98,22 +93,11 @@ public class RequestContext implements AutoCloseable {
         RequestContext ctx = CURRENT.get();
         if (ctx != null) return ctx;
 
-        // 第二层：跨线程快速 fallback（boundedElastic 工具线程）
-        ctx = FALLBACK.get();
-        if (ctx != null) return ctx;
-
-        // 第三层：REGISTRY 兜底（并发场景下安全隔离）
-        if (!REGISTRY.isEmpty()) {
+        // 只有一个活动请求时，跨线程归属才是无歧义的
+        if (REGISTRY.size() == 1) {
             return REGISTRY.values().iterator().next();
         }
         return null;
-    }
-
-    /**
-     * ★ 获取当前请求的唯一标识
-     */
-    public String getRequestId() {
-        return requestId;
     }
 
     /**
@@ -121,8 +105,27 @@ public class RequestContext implements AutoCloseable {
      */
     public static void cleanupAll() {
         CURRENT.remove();
-        FALLBACK.set(null);
         REGISTRY.clear();
+    }
+
+    /**
+     * 解除当前工作线程绑定，但保留注册表条目供异步回调使用。
+     * 非阻塞 subscribe 返回后必须调用，避免线程池线程残留上一次请求。
+     */
+    public void detachCurrentThread() {
+        if (CURRENT.get() == this) {
+            CURRENT.remove();
+        }
+    }
+
+    /** 获取当前请求的唯一标识。 */
+    public String getRequestId() {
+        return requestId;
+    }
+
+    /** 获取 SSE 发射器，非流式请求返回 null。 */
+    public SseEmitter getEmitter() {
+        return emitter;
     }
 
     // ==================== SSE ====================
@@ -169,21 +172,11 @@ public class RequestContext implements AutoCloseable {
         return List.copyOf(calledSkills);
     }
 
-    // ==================== SSE ====================
-
-    /**
-     * 获取 SSE 发射器
-     *
-     * @return SSE 发射器
-     */
-    public SseEmitter getEmitter() {
-        return emitter;
-    }
 
     // ==================== 清理 ====================
 
     /**
-     * ★ 清理当前请求的三层存储（从 REGISTRY + FALLBACK + ThreadLocal 中移除）
+     * ★ 清理当前请求的上下文存储
      * <p>
      * 使用 requestId 精确删除 REGISTRY 条目，CAS 清除 FALLBACK，
      * 确保并发请求的上下文不会被误清理。
@@ -191,7 +184,8 @@ public class RequestContext implements AutoCloseable {
     @Override
     public void close() {
         REGISTRY.remove(requestId);
-        FALLBACK.compareAndSet(this, null);
-        CURRENT.remove();
+        if (CURRENT.get() == this) {
+            CURRENT.remove();
+        }
     }
 }

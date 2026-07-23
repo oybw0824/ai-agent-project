@@ -12,7 +12,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  * ★ 统一线程池配置（替代 AgentStreamService、SkillGenerationController、SingleStepGenerationService 各自 new 线程池）
  * <p>
  * 好处：
- * - 统一调优与监控
+ * - 统一调优与生命周期管理
  * - Spring 自动管理生命周期（shutdown）
  * - application.yml 可配置
  *

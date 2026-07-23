@@ -1,49 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-
-export interface ToastInstance {
-  id: number
-  type: 'success' | 'error' | 'warning' | 'info'
-  message: string
-  duration: number
-}
-let nextId = 0
-const toasts = ref<ToastInstance[]>([])
+import { useToastState } from '@/composables/useToast'
 
 const icons: Record<string, string> = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' }
-
-function show(type: ToastInstance['type'], message: string, duration = 3000) {
-  const id = ++nextId
-  toasts.value.push({ id, type, message, duration })
-  if (duration > 0) setTimeout(() => remove(id), duration)
-}
-function remove(id: number) {
-  toasts.value = toasts.value.filter(t => t.id !== id)
-}
-
-defineExpose({ show, remove })
-
-// 快捷方法
-function success(msg: string, dur?: number) { show('success', msg, dur) }
-function error(msg: string, dur?: number) { show('error', msg, dur) }
-function warning(msg: string, dur?: number) { show('warning', msg, dur) }
-function info(msg: string, dur?: number) { show('info', msg, dur) }
-
-// 全局单例
-let globalInstance: { success: typeof success; error: typeof error; warning: typeof warning; info: typeof info } | null = null
-onMounted(() => { globalInstance = { success, error, warning, info } })
-
-// 通过模块导出供外部使用
-export function useToast() {
-  setTimeout(() => { /* ensure instance mounted */ })
-  return {
-    show: (type: ToastInstance['type'], msg: string, dur?: number) => toasts.value.push({ id: ++nextId, type, message: msg, duration: dur ?? 3000 }),
-    success: (msg: string, dur?: number) => toasts.value.push({ id: ++nextId, type: 'success', message: msg, duration: dur ?? 3000 }),
-    error: (msg: string, dur?: number) => toasts.value.push({ id: ++nextId, type: 'error', message: msg, duration: dur ?? 3000 }),
-    warning: (msg: string, dur?: number) => toasts.value.push({ id: ++nextId, type: 'warning', message: msg, duration: dur ?? 3000 }),
-    info: (msg: string, dur?: number) => toasts.value.push({ id: ++nextId, type: 'info', message: msg, duration: dur ?? 3000 }),
-  }
-}
+const { toasts, remove } = useToastState()
 </script>
 
 <template>

@@ -45,9 +45,6 @@ public class SingleStepGenerationService {
     private int batchSize;
 
     /** ★ 优化4：简单步骤大批次大小 */
-    @Value("${agent.skill-gen.step.simple-batch-size:10}")
-    private int simpleBatchSize;
-
     @Value("${agent.skill-gen.step.batch-timeout-ms:180000}")
     private long batchTimeoutMs;
 
@@ -118,15 +115,9 @@ public class SingleStepGenerationService {
 
     /**
      * 为所有步骤生成 Markdown 描述（批量 + 并行 + 三级降级）
-     * <p>
-     * ★ 优化4：将步骤分为简单步骤（纯逻辑/无工具/无判断缺口）和复杂步骤两组，
-     * 简单步骤使用更大的批次（simpleBatchSize），减少 LLM 调用次数。
-     * <p>
-     * ★ 优化5：基于 toolResolutionJson 的 SHA-256 作为 prdHash 注入缓存键，
-     * 相同 PRD 的相同步骤跨请求可复用缓存。
      *
      * @param toolResolutionJson 阶段二工具映射结果 JSON
-     * @param progressId         进度 ID（流式用，当前传 null）
+     * @param progressId         进度 ID
      * @return 各步骤 Markdown 列表，按 step_number 排序
      */
     public List<String> generateAllSteps(String toolResolutionJson, String progressId) {
@@ -134,54 +125,38 @@ public class SingleStepGenerationService {
             JsonNode root = objectMapper.readTree(toolResolutionJson);
             JsonNode stepsNode = root.get("steps");
             if (stepsNode == null || !stepsNode.isArray()) {
-                log.error("★ 阶段二输出缺失 steps 字段或不是数组，生成失败");
+                log.error("★ 阶段二输出缺失 steps 字段");
                 return List.of("【错误】阶段二输出缺失 steps 字段");
             }
             int totalSteps = stepsNode.size();
 
-            // ★ 优化5：基于阶段二 JSON 计算 prdHash，用于跨请求缓存键
-            String prdHash = LlmCallTemplate.sha256(toolResolutionJson).substring(0, 12);
-
-            // ★ 优化4：分类步骤 — 简单 vs 复杂
-            List<JsonNode> simpleSteps = new ArrayList<>();
-            List<JsonNode> complexSteps = new ArrayList<>();
-            int[] origIndices = new int[totalSteps]; // 记录原始索引
-            for (int i = 0; i < totalSteps; i++) {
-                JsonNode step = stepsNode.get(i);
-                origIndices[i] = i;
-                if (isSimpleStep(step)) {
-                    simpleSteps.add(step);
-                } else {
-                    complexSteps.add(step);
-                }
-            }
-            log.info("★ 阶段三 智能分批 — {} 简单步骤 + {} 复杂步骤（简单批次={}，复杂批次={}）",
-                    simpleSteps.size(), complexSteps.size(), simpleBatchSize, batchSize);
-
-            // ★ 构建批次：简单步骤用大批次，复杂步骤用小批次
+            // 统一批次分组
             List<List<JsonNode>> allBatches = new ArrayList<>();
-            int[] batchStartIndices = buildBatches(simpleSteps, simpleBatchSize, complexSteps, batchSize, allBatches);
+            for (int i = 0; i < totalSteps; i += batchSize) {
+                int end = Math.min(i + batchSize, totalSteps);
+                List<JsonNode> batch = new ArrayList<>();
+                for (int j = i; j < end; j++) batch.add(stepsNode.get(j));
+                allBatches.add(batch);
+            }
 
-            log.info("★ 阶段三 [单步生成] 开始 — {} 个步骤 → {} 批次，progressId={}",
-                    totalSteps, allBatches.size(), progressId);
+            String prdHash = LlmCallTemplate.sha256(toolResolutionJson).substring(0, 12);
+            log.info("★ 阶段三 [单步生成] — {} 步骤 → {} 批次", totalSteps, allBatches.size());
 
-            // ★ 并行执行，使用 prdHash 增强缓存键
+            // 并行执行批次
             List<CompletableFuture<List<String>>> futures = new ArrayList<>();
             for (int i = 0; i < allBatches.size(); i++) {
                 final int batchIdx = i;
                 futures.add(CompletableFuture.supplyAsync(() -> {
                     List<JsonNode> batch = allBatches.get(batchIdx);
-                    int startIdx = batchStartIndices[batchIdx];
-                    int first = safeStepNumber(batch.get(0), startIdx);
-                    int last = safeStepNumber(batch.get(batch.size() - 1),
-                            startIdx + batch.size() - 1);
-                    log.info("★ [线程{}] 批次 Step {}-{} 开始",
-                            Thread.currentThread().getName(), first, last);
-                    return generateBatch(batch, startIdx, prdHash);
+                    int start = batchIdx * batchSize;
+                    log.info("★ [{}] 批次 Step {}-{}", Thread.currentThread().getName(),
+                            safeStepNumber(batch.get(0), start),
+                            safeStepNumber(batch.get(batch.size() - 1), start + batch.size() - 1));
+                    return generateBatch(batch, start, prdHash);
                 }, executor));
             }
 
-            List<String> allMarkdowns = collectBatchResults(futures, allBatches, batchStartIndices);
+            List<String> allMarkdowns = collectBatchResults(futures, allBatches);
 
             allMarkdowns.sort(Comparator.comparingInt(this::extractStepNumber));
             log.info("★ 阶段三 [单步生成] 完成 — 生成 {} 个步骤 Markdown", allMarkdowns.size());
@@ -193,86 +168,10 @@ public class SingleStepGenerationService {
     }
 
     /**
-     * ★ 优化4：将简单和复杂步骤合并为批次列表，返回每个批次的起始全局索引
-     */
-    private int[] buildBatches(List<JsonNode> simpleSteps, int simpleSz,
-                                List<JsonNode> complexSteps, int complexSz,
-                                List<List<JsonNode>> outBatches) {
-        List<Integer> startIndices = new ArrayList<>();
-        int globalIdx = 0;
-
-        // 简单步骤：大批次
-        for (int i = 0; i < simpleSteps.size(); i += simpleSz) {
-            int end = Math.min(i + simpleSz, simpleSteps.size());
-            List<JsonNode> batch = new ArrayList<>(simpleSteps.subList(i, end));
-            outBatches.add(batch);
-            startIndices.add(globalIdx);
-            globalIdx += batch.size();
-        }
-
-        // 复杂步骤：小批次
-        for (int i = 0; i < complexSteps.size(); i += complexSz) {
-            int end = Math.min(i + complexSz, complexSteps.size());
-            List<JsonNode> batch = new ArrayList<>(complexSteps.subList(i, end));
-            outBatches.add(batch);
-            startIndices.add(globalIdx);
-            globalIdx += batch.size();
-        }
-
-        return startIndices.stream().mapToInt(Integer::intValue).toArray();
-    }
-
-    /**
-     * ★ 优化4：判断步骤是否为简单步骤（可合并进大批次）
-     * <p>
-     * 简单步骤特征：match_type="无需工具" 或 matched_tools 为空、
-     * judge_logic 无 gap_warning、goal 简短。
-     */
-    private boolean isSimpleStep(JsonNode step) {
-        // 1. 工具匹配类型为"无需工具"
-        JsonNode tr = step.get("tool_resolution");
-        if (tr != null) {
-            String matchType = textOr(tr.get("match_type"), "");
-            if ("无需工具".equals(matchType)) {
-                return true;
-            }
-            // 无实际匹配工具
-            JsonNode matched = tr.get("matched_tools");
-            if (matched != null && matched.isArray() && matched.size() == 0) {
-                // 同时无 auto_generated_tool
-                JsonNode autoTool = tr.get("auto_generated_tool");
-                if (autoTool == null || autoTool.isNull()) {
-                    return true;
-                }
-            }
-        }
-
-        // 2. 无判断逻辑缺口
-        JsonNode jl = step.get("judge_logic");
-        if (jl != null) {
-            JsonNode gw = jl.get("gap_warning");
-            if (gw != null && !gw.isNull() && !gw.asText().isBlank()) {
-                return false; // 有缺口 → 复杂步骤
-            }
-        }
-
-        // 3. goal 长度 < 50 字
-        String goal = textOr(step.get("goal"), "");
-        return goal.length() < 50;
-    }
-
-    private String textOr(JsonNode node, String def) {
-        if (node == null || node.isNull()) return def;
-        String text = node.asText();
-        return text == null || text.isBlank() ? def : text;
-    }
-
-    /**
-     * ★ 提取：收集各批次并行结果（含超时降级逻辑 + prdHash 传递）
+     * 收集各批次并行结果（含超时降级逻辑）
      */
     private List<String> collectBatchResults(List<CompletableFuture<List<String>>> futures,
-                                              List<List<JsonNode>> batches,
-                                              int[] batchStartIndices) {
+                                              List<List<JsonNode>> batches) {
         List<String> allMarkdowns = new ArrayList<>();
         int globalStepIndex = 0;
         for (int i = 0; i < futures.size(); i++) {
@@ -370,7 +269,13 @@ public class SingleStepGenerationService {
 
         int firstStep = safeStepNumber(batch.get(0), batchStartIndex);
         String response = llmCallTemplate.call(prompt, cacheKey, "阶段三[批" + firstStep + "]");
-        return parseBatchResponse(response.trim());
+        List<String> parsed = parseBatchResponse(response.trim());
+        if (parsed.size() != batch.size()) {
+            llmCallTemplate.evictCache(cacheKey);
+            throw new IllegalStateException("批次步骤数量不匹配：期望 " + batch.size()
+                    + "，实际 " + parsed.size());
+        }
+        return parsed;
     }
 
     /**
@@ -439,7 +344,11 @@ public class SingleStepGenerationService {
         String prompt = formatPromptWithPrefix(stepJson);
         String response = llmCallTemplate.call(prompt, cacheKey, "阶段三[单步降级]");
         List<String> parsed = parseBatchResponse(response.trim());
-        return parsed.isEmpty() ? buildPlaceholderMarkdown(step, "解析响应为空", stepIndex) : parsed.get(0);
+        if (parsed.isEmpty()) {
+            llmCallTemplate.evictCache(cacheKey);
+            return buildPlaceholderMarkdown(step, "解析响应为空", stepIndex);
+        }
+        return parsed.get(0);
     }
 
     /**

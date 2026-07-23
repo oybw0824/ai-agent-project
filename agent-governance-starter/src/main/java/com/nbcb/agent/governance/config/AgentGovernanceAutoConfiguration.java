@@ -4,6 +4,7 @@ import com.nbcb.agent.governance.aop.AgentGovernanceAopInterceptor;
 import com.nbcb.agent.governance.interceptor.AgentGovernanceApiInterceptor;
 import com.nbcb.agent.governance.mapper.AgentGovernanceMapper;
 import com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration;
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -22,8 +23,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @AutoConfiguration
 @AutoConfigureAfter(MybatisPlusAutoConfiguration.class)
 @EnableAspectJAutoProxy
-@ConditionalOnClass(name = "com.baomidou.mybatisplus.core.mapper.BaseMapper")
+@ConditionalOnClass(name = {
+        "com.baomidou.mybatisplus.core.mapper.BaseMapper",
+        "org.springframework.web.servlet.config.annotation.WebMvcConfigurer",
+        "jakarta.servlet.http.HttpServletRequest"
+})
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @ConditionalOnProperty(prefix = "agent-governance", name = "enabled", havingValue = "true", matchIfMissing = true)
+@MapperScan(basePackageClasses = AgentGovernanceMapper.class)
 public class AgentGovernanceAutoConfiguration {
 
     @Bean
@@ -58,7 +65,7 @@ public class AgentGovernanceAutoConfiguration {
             public void addInterceptors(InterceptorRegistry registry) {
                 registry.addInterceptor(apiInterceptor)
                         .addPathPatterns("/api/**")
-                        .excludePathPatterns("/api/admin/**", "/actuator/**");
+                        .excludePathPatterns("/api/admin/**");
             }
         };
     }

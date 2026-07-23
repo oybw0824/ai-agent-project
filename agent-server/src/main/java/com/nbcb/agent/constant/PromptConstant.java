@@ -17,10 +17,8 @@ public final class PromptConstant {
     /** Agent 核心系统提示词 */
     public static final String AGENT_SYSTEM = "agent-system";
 
-    /** ★ v2 四阶段 Skill 生成提示词（阶段四已改为纯 Java 组装，无需 LLM prompt） */
-    public static final String SKILL_DECOMPOSE = "skill-decompose";
-    public static final String SKILL_RESOLVE_TOOLS = "skill-resolve-tools";
+    /** Skill 步骤 Markdown 生成提示词 */
     public static final String SKILL_GENERATE_STEPS = "skill-generate-steps";
-    /** ★ 合并模式（阶段一+二合并） */
+    /** PRD 拆解与工具映射合并提示词 */
     public static final String SKILL_DECOMPOSE_RESOLVE = "skill-decompose-resolve";
 }

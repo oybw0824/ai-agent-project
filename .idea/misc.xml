@@ -6,6 +6,9 @@
       <list>
         <option value="$PROJECT_DIR$/pom.xml" />
         <option value="$PROJECT_DIR$/agent-governance-starter/pom.xml" />
+        <option value="$PROJECT_DIR$/native-mcp-client-validation/pom.xml" />
+        <option value="$PROJECT_DIR$/native-mcp-server-validation/pom.xml" />
+        <option value="$PROJECT_DIR$/nacos-mcp-agent/pom.xml" />
       </list>
     </option>
   </component>

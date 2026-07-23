@@ -7,7 +7,8 @@ import com.nbcb.agent.domain.ChatRequest;
 import com.nbcb.agent.service.AgentService;
 import com.nbcb.agent.service.AgentStreamService;
 import com.nbcb.agent.service.McpCatalogService;
-import com.nbcb.agent.skill.SkillRegistry;
+import com.nbcb.agent.skill.dynamic.DynamicSkillProperties;
+import com.nbcb.agent.skill.dynamic.DynamicSkillRuntimeService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,16 +33,19 @@ public class ChatController {
 
     private final AgentService agentService;
     private final AgentStreamService streamService;
-    private final SkillRegistry skillRegistry;
+    private final DynamicSkillRuntimeService dynamicSkillRuntimeService;
+    private final DynamicSkillProperties dynamicSkillProperties;
     private final McpCatalogService mcpCatalogService;
 
     public ChatController(AgentService agentService,
                           AgentStreamService streamService,
-                          SkillRegistry skillRegistry,
+                          DynamicSkillRuntimeService dynamicSkillRuntimeService,
+                          DynamicSkillProperties dynamicSkillProperties,
                           McpCatalogService mcpCatalogService) {
         this.agentService = agentService;
         this.streamService = streamService;
-        this.skillRegistry = skillRegistry;
+        this.dynamicSkillRuntimeService = dynamicSkillRuntimeService;
+        this.dynamicSkillProperties = dynamicSkillProperties;
         this.mcpCatalogService = mcpCatalogService;
     }
 
@@ -50,19 +54,20 @@ public class ChatController {
      */
     @GetMapping("/skills")
     public Map<String, Object> listSkills() {
+        List<Map<String, Object>> skills = dynamicSkillRuntimeService.listSkillStatuses(
+                dynamicSkillProperties.getAgentName());
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("source", "classpath:skills/*.md");
-        result.put("skillCount", skillRegistry.size());
-        result.put("skills", skillRegistry.listAll().stream()
-                .map(m -> Map.of("name", m.getName(), "description", m.getDescription()))
-                .toList());
+        result.put("agentName", dynamicSkillProperties.getAgentName());
+        result.put("source", "database+nas");
+        result.put("skillCount", skills.size());
+        result.put("skills", skills);
         return result;
     }
 
     /**
      * ★ 查询当前注册的 MCP 工具列表
      * <p>
-     * 工具来源：通过 SSE 连接 mcp-service（mcp-service 自身注册在 Nacos AI Registry）。
+     * 工具来源：通过 Streamable HTTP 连接 Higress AI 网关。
      * 返回所有已注册的 MCP 工具的元数据（名称、描述、输入参数 schema）。
      *
      * @return 工具元数据列表（含 Nacos 来源标记）

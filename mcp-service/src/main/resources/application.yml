@@ -1,6 +1,6 @@
 # ============================================================
-# mcp-service — MCP 工具服务端 配置文件
-# WebFlux ASYNC STREAMABLE + Nacos Extensions Registry
+# mcp-service — Higress HTTP 工具提供服务
+# 普通 REST API + Nacos Naming 服务注册
 # ============================================================
 
 server:
@@ -10,38 +10,19 @@ spring:
   application:
     name: mcp-service
 
-  # ==================== MCP Server（WebFlux STREAMABLE） ====================
-  ai:
-    mcp:
-      server:
-        name: mcp-service
-        version: 1.1.0
-        type: ASYNC
-        protocol: STREAMABLE
-        streamable-http:
-          mcp-endpoint: /mcp
-
-    # ==================== Nacos Extensions Registry ====================
-    alibaba:
-      mcp:
-        nacos:
-          server-addr: ${NACOS_ADDR:127.0.0.1:8848}
-          namespace: ${NACOS_NAMESPACE:public}
-          username: ${NACOS_USERNAME:nacos}
-          password: ${NACOS_PASSWORD:nacos}
-          register:
-            enabled: true
-            service-name: mcp-service
-            service-group: mcp-server
+  # ==================== Nacos Naming 服务注册 ====================
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_DISCOVERY_ENABLED:true}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
 
 # ==================== 日志 ====================
 logging:
   level:
     com.nbcb.mcp: INFO
-    com.alibaba.cloud.ai: DEBUG
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
+    com.alibaba.cloud.nacos: INFO

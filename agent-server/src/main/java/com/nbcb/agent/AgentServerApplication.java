@@ -13,18 +13,18 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 功能：
  * <ol>
  *   <li>启动 Spring Boot Web 容器</li>
- *   <li>Nacos AiService SDK 加载 Skill（推送式，无需 @Scheduled）</li>
- *   <li>Nacos Distributed Client 发现 MCP 工具（STREAMABLE 协议）</li>
+ *   <li>根据数据库绑定从 NAS 按版本加载 Skill</li>
+ *   <li>通过 Streamable HTTP 从 Higress AI 网关拉取 MCP 工具</li>
  *   <li>ReactAgent + DeepSeek Chat → /chat REST 接口</li>
  * </ol>
  * <p>
- * 无需 {@code @EnableDiscoveryClient}，MCP 服务发现由 Extensions 自动完成。
+ * Agent 仅连接 Higress 暴露的 MCP 地址，不直接访问后端 HTTP 服务。
  *
  * @author com.nbcb
  */
 @Slf4j
 @SpringBootApplication
-@MapperScan("com.nbcb.agent.governance.mapper")  // ★ Agent 治理组件 MyBatis Mapper 扫描
+@MapperScan({"com.nbcb.agent.governance.mapper", "com.nbcb.agent.skill.dynamic.mapper"})
 public class AgentServerApplication {
 
     public static void main(String[] args) {

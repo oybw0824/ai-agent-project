@@ -4,7 +4,6 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.hook.ModelHook;
 import com.nbcb.agent.exception.AgentEarlyTerminationException;
-import com.nbcb.agent.metric.AgentMetrics;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
@@ -35,11 +34,9 @@ public class ModelCallLimitHook extends ModelHook {
     private static final ConcurrentHashMap<String, Integer> SESSION_CALL_COUNTS = new ConcurrentHashMap<>();
 
     private final AgentGovernanceProperties properties;
-    private final AgentMetrics metrics;
 
-    public ModelCallLimitHook(AgentGovernanceProperties properties, AgentMetrics metrics) {
+    public ModelCallLimitHook(AgentGovernanceProperties properties) {
         this.properties = properties;
-        this.metrics = metrics;
     }
 
     @Override
@@ -60,9 +57,6 @@ public class ModelCallLimitHook extends ModelHook {
         if (count > limit) {
             log.warn("模型调用次数超限 [session={}]: used={}, limit={}",
                     sessionId, count, limit);
-            if (metrics != null) {
-                metrics.governanceModelCallLimit.increment();
-            }
             throw new AgentEarlyTerminationException(
                     AgentEarlyTerminationException.REASON_MODEL_CALL_LIMIT,
                     "模型调用次数超过限制（" + count + " / " + limit + "）",

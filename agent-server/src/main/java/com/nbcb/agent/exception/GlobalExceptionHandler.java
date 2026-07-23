@@ -1,16 +1,19 @@
 package com.nbcb.agent.exception;
 
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
+import com.nbcb.agent.skill.dynamic.DynamicSkillException;
 import com.nbcb.agent.util.ResponseBuilder;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Map;
 
@@ -25,6 +28,22 @@ import java.util.Map;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /**
+     * 动态 Skill 查询、加载和解析异常。
+     */
+    @ExceptionHandler(DynamicSkillException.class)
+    public ResponseEntity<Map<String, Object>> handleDynamicSkill(DynamicSkillException ex) {
+        HttpStatus status = ex.getErrorCode().getHttpStatus();
+        if (status.is5xxServerError()) {
+            log.error("动态 Skill 处理失败 [{}]: {}", ex.getErrorCode(), ex.getMessage(), ex);
+        } else {
+            log.warn("动态 Skill 请求失败 [{}]: {}", ex.getErrorCode(), ex.getMessage());
+        }
+        Map<String, Object> body = ResponseBuilder.error(status.value(), ex.getMessage());
+        body.put("code", ex.getErrorCode().name());
+        return ResponseEntity.status(status).body(body);
+    }
 
     /**
      * 参数校验失败（@Valid 校验 → MethodArgumentNotValidException）
@@ -164,6 +183,16 @@ public class GlobalExceptionHandler {
                 ex.getReason(), ex.getSessionId(), ex.getMessage());
         return ResponseBuilder.error(422,
                 "Agent 会话已终止 [" + ex.getReason() + "]");
+    }
+
+    /**
+     * 请求的接口或静态资源不存在。
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Map<String, Object> handleNoResourceFound(NoResourceFoundException ex) {
+        log.debug("请求资源不存在: {}", ex.getResourcePath());
+        return ResponseBuilder.error(404, "请求的资源不存在");
     }
 
     /**

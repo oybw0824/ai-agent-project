@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useSSE } from '@/composables/useSSE'
 import { renderSkillMarkdown } from '@/utils/markdown'
 import { storage } from '@/utils/storage'
-import type { SkillStageData, SkillDoneData } from '@/types/api'
+import type { SkillStageData, SkillDoneData, StreamEvent } from '@/types/api'
 import type { StepItem } from '@/components/ui/USteps.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import UButton from '@/components/ui/UButton.vue'
@@ -18,8 +18,8 @@ const templateInput = ref('')
 const advancedOpen = ref(false)
 const isGenerating = ref(false)
 const result = ref<{ markdown?: string; valid?: boolean; errors?: string[]; time?: number } | null>(null)
-const stageSteps = ref<StepItem[]>(Array(4).fill({ label: '', status: 'pending' }).map((_, i) => ({
-  label: ['PRD 拆解', '工具映射', '步骤生成', '组装校验'][i],
+const stageSteps = ref<StepItem[]>(Array(3).fill({ label: '', status: 'pending' }).map((_, i) => ({
+  label: ['拆解与工具映射', '步骤生成', '组装校验'][i],
   status: 'pending' as StepItem['status'],
 })))
 const elapsed = ref('0.0s')
@@ -44,20 +44,22 @@ async function generate() {
   genTimer = setInterval(() => { elapsed.value = ((Date.now() - genStart) / 1000).toFixed(1) + 's' }, 200)
 
   const ctrl = new AbortController()
-  const stageNameMap: Record<string, string> = { decomposePrd: 'PRD 拆解', resolveTools: '工具映射', generateSteps: '步骤生成', assembleSkill: '组装校验' }
+  const stageNameMap: Record<string, string> = { decomposeAndResolve: '拆解与工具映射', generateSteps: '步骤生成', assembleSkill: '组装校验' }
   try {
     await useSSE().start({
       url: '/api/v1/skill/generate-stream', body: { prdContent: prd, template: templateInput.value.trim() || undefined },
       signal: ctrl.signal,
       onEvent(type, data) {
         if (type === 'skill_stage') {
-          const sd = data as unknown as SkillStageData
-          if (sd?.data?.detail?.stages) {
-            sd.data.detail.stages.forEach(s => {
-              const label = stageNameMap[s.name] || s.name
-              const step = stageSteps.value.find(ss => ss.label === label)
-              if (step) { step.status = s.status as StepItem['status']; if (s.elapsedMs && s.elapsedMs > 0) step.elapsed = (s.elapsedMs / 1000).toFixed(1) + 's' }
-            })
+          const event = data as unknown as StreamEvent<SkillStageData>
+          const sd = event.data
+          if (sd?.stageName) {
+            const label = stageNameMap[sd.stageName] || sd.stageName
+            const step = stageSteps.value.find(item => item.label === label)
+            if (step) {
+              step.status = sd.status === 'complete' ? 'completed' : 'running'
+              if (sd.elapsedMs > 0) step.elapsed = (sd.elapsedMs / 1000).toFixed(1) + 's'
+            }
           }
         } else if (type === 'done') {
           const d = data as unknown as { data?: SkillDoneData }
@@ -94,7 +96,7 @@ function loadHistory(idx: number) {
 
 <template>
   <div class="gp">
-    <AppHeader title="⚡ Skill Generator" subtitle="PRD → SKILL.md 四阶段流水线">
+    <AppHeader title="⚡ Skill Generator" subtitle="PRD → SKILL.md 三阶段流水线">
       <template #actions><UBadge variant="default" size="md">{{ elapsed }}</UBadge></template>
     </AppHeader>
 
@@ -130,7 +132,7 @@ function loadHistory(idx: number) {
           </div>
           <div v-if="!isGenerating && !result" class="ge">
             <div class="gei">📋</div><h3>生成 Skill Markdown</h3>
-            <p>在左侧输入 PRD，点击「生成 Skill」<br>分四个阶段产出完整技能文件</p>
+            <p>在左侧输入 PRD，点击「生成 Skill」<br>分三个阶段产出完整技能文件</p>
             <div class="gec"><span><b>拆解</b> · 分解为步骤</span><span><b>映射</b> · 匹配工具</span><span><b>组装</b> · 生成 Skill</span></div>
             <div v-if="history.length" class="ghh"><div class="gp-hd">📜 最近</div><div v-for="(h,i) in [...history].reverse()" :key="i" class="ghi" @click="loadHistory(history.length-1-i)"><span>{{ h.valid?'✅':'⚠️' }} {{ h.name }}</span><span class="ght">{{ (h.timeMs/1000).toFixed(1) }}s</span></div></div>
           </div>

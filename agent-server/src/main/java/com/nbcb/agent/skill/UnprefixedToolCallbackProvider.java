@@ -105,5 +105,11 @@ public class UnprefixedToolCallbackProvider implements ToolCallbackProvider {
         public String call(String toolInput) {
             return delegate.call(toolInput);
         }
+
+        /** ★ 透传 ToolContext，避免框架调用 2-arg 版本时丢失上下文 */
+        @Override
+        public String call(String toolInput, org.springframework.ai.chat.model.ToolContext toolContext) {
+            return delegate.call(toolInput, toolContext);
+        }
     }
 }

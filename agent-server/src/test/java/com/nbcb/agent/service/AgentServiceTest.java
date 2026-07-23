@@ -3,8 +3,6 @@ package com.nbcb.agent.service;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.nbcb.agent.domain.AgentChatResponse;
-import com.nbcb.agent.metric.AgentMetrics;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,9 +21,6 @@ import static org.mockito.Mockito.verify;
 
 /**
  * AgentService 单元测试 — v2.1: LLM 自主匹配技能
- * <p>
- * ★ 使用 SimpleMeterRegistry 构建真实 AgentMetrics，避免 mock Counter 返回 null。
- *
  * @author com.nbcb
  */
 @DisplayName("AgentService 单元测试 (v2.1 LLM自主匹配技能)")
@@ -39,8 +34,7 @@ class AgentServiceTest {
 
     @BeforeEach
     void setUp() {
-        AgentMetrics metrics = new AgentMetrics(new SimpleMeterRegistry());
-        agentService = new AgentService(reactAgent, metrics);
+        agentService = new AgentService(reactAgent);
     }
 
     @Test

@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据库驱动 MCP Agent 验证</title>
+    <style>
+        :root { color-scheme: dark; --bg:#0d1320; --panel:#172033; --line:#30405b; --text:#edf3ff; --muted:#9eacc1; --blue:#72a7ff; --green:#42d39b; --red:#ff7c8d; }
+        * { box-sizing:border-box; }
+        body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:"Microsoft YaHei",system-ui,sans-serif; }
+        main { width:min(1080px,calc(100% - 32px)); margin:auto; padding:32px 0; }
+        header { display:flex; justify-content:space-between; gap:20px; margin-bottom:20px; }
+        h1 { margin:0 0 8px; font-size:28px; } h2 { margin:0 0 14px; font-size:17px; }
+        p,.hint { color:var(--muted); line-height:1.7; }
+        .status,.panel,.flow div { border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+        .status { padding:9px 13px; height:max-content; white-space:nowrap; color:var(--muted); }
+        .status.online { color:var(--green); }
+        .flow { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:18px; }
+        .flow div { padding:14px; } .flow strong { display:block; margin-bottom:5px; }
+        .flow span { color:var(--muted); font-size:13px; }
+        .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+        .panel { padding:20px; }
+        label { display:block; margin:12px 0 7px; color:#cad6e9; }
+        select,textarea { width:100%; border:1px solid var(--line); border-radius:8px; background:#0a1120; color:var(--text); padding:12px; font:inherit; }
+        textarea { min-height:160px; resize:vertical; line-height:1.65; }
+        .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+        button { border:0; border-radius:8px; padding:10px 14px; background:var(--blue); color:#08111f; font:inherit; font-weight:700; cursor:pointer; }
+        button.secondary { background:#243149; color:#dbe7f8; border:1px solid var(--line); }
+        button:disabled { opacity:.6; cursor:wait; }
+        #answer { min-height:310px; white-space:pre-wrap; line-height:1.75; color:#dce7f7; }
+        #answer.error { color:var(--red); }
+        #meta { margin-top:12px; color:var(--muted); font-size:12px; }
+        @media(max-width:800px){ header{flex-direction:column}.flow,.grid{grid-template-columns:1fr} }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>数据库驱动 MCP Agent 验证</h1>
+            <p>Agent 在项目启动时依据公共表配置构建；对话请求按 agentId + nodeId 精确调用单个节点。</p>
+        </div>
+        <div id="status" class="status">正在检查服务</div>
+    </header>
+    <section class="flow">
+        <div><strong>1. 启动装配</strong><span>AI_AGENT → NODE → MODEL</span></div>
+        <div><strong>2. 权限绑定</strong><span>NODE → SKILL → TOOL</span></div>
+        <div><strong>3. 单节点对话</strong><span>agentId + nodeId → runtime node</span></div>
+    </section>
+    <section class="grid">
+        <div class="panel">
+            <h2>发送测试问题</h2>
+            <label for="agentId">Agent</label>
+            <select id="agentId"></select>
+            <label for="nodeId">Node</label>
+            <select id="nodeId"></select>
+            <label for="question">问题</label>
+            <textarea id="question"></textarea>
+            <div class="actions">
+                <button id="send">普通调用</button>
+                <button id="stream" class="secondary">流式调用</button>
+                <button id="credit" class="secondary">企业征信示例</button>
+                <button id="weather" class="secondary">天气示例</button>
+            </div>
+            <div id="meta"></div>
+        </div>
+        <div class="panel">
+            <h2>Agent 回答</h2>
+            <div id="answer" class="hint">回答会显示在这里。</div>
+        </div>
+    </section>
+</main>
+<script>
+    const agentId = document.querySelector('#agentId');
+    const nodeId = document.querySelector('#nodeId');
+    const question = document.querySelector('#question');
+    const answer = document.querySelector('#answer');
+    const meta = document.querySelector('#meta');
+    const status = document.querySelector('#status');
+    const send = document.querySelector('#send');
+    const stream = document.querySelector('#stream');
+    let agents = [];
+
+    const examples = {
+        credit: '请查询统一社会信用代码 91110000MA01NB001X 的企业征信信息，并汇总评级、评分、风险等级、报告日期和 provider。',
+        weather: '请查询北京天气，并告诉我温度、湿度、天气状况和 provider。'
+    };
+
+    function selectedPayload() {
+        return {
+            agentId: agentId.value,
+            nodeId: nodeId.value,
+            question: question.value.trim()
+        };
+    }
+
+    function setBusy(busy) {
+        send.disabled = busy;
+        stream.disabled = busy;
+    }
+
+    function renderNodes() {
+        const selected = agents.find(a => a.agentId === agentId.value);
+        nodeId.replaceChildren();
+        (selected?.nodeIds || []).forEach(id => {
+            const option = document.createElement('option');
+            option.value = id || '';
+            option.textContent = id || '';
+            nodeId.appendChild(option);
+        });
+    }
+
+    async function initialize() {
+        try {
+            const health = await fetch('/actuator/health');
+            if (!health.ok) throw new Error('服务未就绪');
+            const response = await fetch('/api/v1/agents');
+            agents = await response.json();
+            agentId.replaceChildren();
+            agents.forEach(a => {
+                const option = document.createElement('option');
+                option.value = a.agentId || '';
+                option.textContent = `${a.agentName || ''} (${a.agentId || ''})`;
+                agentId.appendChild(option);
+            });
+            renderNodes();
+            question.value = examples.credit;
+            status.textContent = `已启动构建 ${agents.length} 个 Agent`;
+            status.classList.add('online');
+        }
+        catch (error) {
+            status.textContent = error.message;
+        }
+    }
+
+    async function chat() {
+        if (!question.value.trim()) return;
+        setBusy(true);
+        answer.className = 'hint';
+        answer.textContent = 'Agent 正在处理...';
+        meta.textContent = '';
+        const started = performance.now();
+        try {
+            const response = await fetch('/api/v1/agent/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(selectedPayload())
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(payload.message || payload.detail || `HTTP ${response.status}`);
+            }
+            answer.className = '';
+            answer.textContent = payload.answer || 'Agent 返回空回答';
+            meta.textContent = `Agent ${agentId.value} / Node ${nodeId.value}，耗时 ${((performance.now() - started) / 1000).toFixed(1)} 秒`;
+        }
+        catch (error) {
+            answer.className = 'error';
+            answer.textContent = `调用失败：${error.message}`;
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+
+    async function streamChat() {
+        if (!question.value.trim()) return;
+        setBusy(true);
+        answer.className = '';
+        answer.textContent = '';
+        meta.textContent = '流式调用中...';
+        const started = performance.now();
+        try {
+            const response = await fetch('/api/v1/agent/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'
+                },
+                body: JSON.stringify(selectedPayload())
+            });
+            if (!response.ok || !response.body) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let eventName = 'message';
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, {stream: true});
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                    if (line.startsWith('event:')) {
+                        eventName = line.substring(6).trim();
+                    }
+                    else if (line.startsWith('data:')) {
+                        const data = line.substring(5).trim();
+                        if (eventName === 'message') {
+                            answer.textContent += data;
+                        }
+                        else if (eventName === 'error') {
+                            answer.className = 'error';
+                            answer.textContent += `\n调用失败：${data}`;
+                        }
+                        else if (eventName === 'done') {
+                            meta.textContent = `Agent ${agentId.value} / Node ${nodeId.value}，流式完成，耗时 ${((performance.now() - started) / 1000).toFixed(1)} 秒`;
+                        }
+                    }
+                    else if (line.trim() === '') {
+                        eventName = 'message';
+                    }
+                }
+            }
+        }
+        catch (error) {
+            answer.className = 'error';
+            answer.textContent = `流式调用失败：${error.message}`;
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+
+    agentId.addEventListener('change', renderNodes);
+    send.addEventListener('click', chat);
+    stream.addEventListener('click', streamChat);
+    document.querySelector('#credit').addEventListener('click', () => question.value = examples.credit);
+    document.querySelector('#weather').addEventListener('click', () => question.value = examples.weather);
+    initialize();
+</script>
+</body>
+</html>

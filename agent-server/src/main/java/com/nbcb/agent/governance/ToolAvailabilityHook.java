@@ -3,7 +3,6 @@ package com.nbcb.agent.governance;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.hook.AgentHook;
-import com.nbcb.agent.metric.AgentMetrics;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -42,11 +41,9 @@ public class ToolAvailabilityHook extends AgentHook {
     private static final String DEGRADED_KEY = "_governance_degraded_tools";
 
     private final ToolGovernanceProperties toolGovernanceProperties;
-    private final AgentMetrics metrics;
 
-    public ToolAvailabilityHook(ToolGovernanceProperties toolGovernanceProperties, AgentMetrics metrics) {
+    public ToolAvailabilityHook(ToolGovernanceProperties toolGovernanceProperties) {
         this.toolGovernanceProperties = toolGovernanceProperties;
-        this.metrics = metrics;
     }
 
     @Override

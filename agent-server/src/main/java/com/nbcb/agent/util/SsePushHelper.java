@@ -7,7 +7,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 
 /**
- * ★ SSE 事件推送工具类（消除 AgentStreamService、ToolEventInterceptor、SkillRegistry 三处重复代码）
+ * ★ SSE 事件推送工具类（供 AgentStreamService、UnifiedToolWrapper、动态 Skill 工具复用）
  * <p>
  * 所有 SSE 事件推送统一通过此类，避免 send() + event.name() + event.data() 模式在多处重复。
  *

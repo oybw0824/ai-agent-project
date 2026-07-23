@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { useThemeStore } from '@/stores/theme'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
+import UToast from '@/components/ui/UToast.vue'
 
 const theme = useThemeStore()
 onMounted(() => {
@@ -19,6 +20,7 @@ onMounted(() => {
         </Transition>
       </RouterView>
     </main>
+    <UToast />
   </div>
 </template>
 

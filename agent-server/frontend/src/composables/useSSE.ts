@@ -1,4 +1,6 @@
-import { ref, type Ref } from 'vue'
+import { ref } from 'vue'
+
+const API_BASE = import.meta.env.VITE_API_BASE || ''
 
 export interface SSEOptions {
   url: string
@@ -19,9 +21,7 @@ export function useSSE() {
   async function start(opts: SSEOptions): Promise<void> {
     isRunning.value = true
     try {
-      // ★ 开发环境绕过 Vite proxy 直连后端，避免 Content-Type 被 proxy 丢弃
-      const baseUrl = import.meta.env.DEV ? 'http://localhost:8082' : ''
-      const res = await fetch(baseUrl + opts.url, {
+      const res = await fetch(API_BASE + opts.url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,18 +94,39 @@ export function useSSE() {
 }
 
 /** 简易 fetch 包装（非流式） */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code?: string,
+    message?: string,
+  ) {
+    super(message || `HTTP ${status}`)
+    this.name = 'ApiError'
+  }
+}
+
+async function throwApiError(res: Response): Promise<never> {
+  try {
+    const body = await res.json() as { code?: string; error?: string; message?: string }
+    throw new ApiError(res.status, body.code, body.error || body.message)
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError(res.status)
+  }
+}
+
 export async function apiGet<T>(url: string): Promise<T> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const res = await fetch(API_BASE + url)
+  if (!res.ok) return throwApiError(res)
   return res.json()
 }
 
-export async function apiPost<T>(url: string, body: Record<string, unknown>): Promise<T> {
-  const res = await fetch(url, {
+export async function apiPost<T>(url: string, body?: Record<string, unknown>): Promise<T> {
+  const res = await fetch(API_BASE + url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) return throwApiError(res)
   return res.json()
 }

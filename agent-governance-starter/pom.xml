@@ -6,7 +6,7 @@
 
     <groupId>com.nbcb</groupId>
     <artifactId>agent-governance-starter</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.19</version>
     <packaging>jar</packaging>
     <name>Agent Governance Spring Boot Starter</name>
     <description>Agent 开关治理组件 — API 层 + Agent 层双重拦截，MyBatis-Plus + Caffeine，用户/机构级权限校验</description>
@@ -22,6 +22,8 @@
         <java.version>17</java.version>
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
         <agent-framework.version>1.1.2.2</agent-framework.version>
+        <spring-ai.version>1.1.2</spring-ai.version>
+        <mcp-sdk.version>0.17.0</mcp-sdk.version>
     </properties>
 
     <dependencies>
@@ -46,6 +48,29 @@
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-agent-framework</artifactId>
             <version>${agent-framework.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-mcp</artifactId>
+            <version>${spring-ai.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-autoconfigure-mcp-server-common</artifactId>
+            <version>${spring-ai.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-spring-webflux</artifactId>
+            <version>${mcp-sdk.version}</version>
             <scope>provided</scope>
         </dependency>
 

@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
  * 提供 LLM 调用的公共 JSON 处理逻辑：从自然语言响应中提取 JSON、
  * 校验 JSON 完整性（可解析性）。
  * <p>
- * 被 Skill 生成四阶段服务复用：
+ * 被 Skill 生成服务复用：
  * <ul>
  *   <li>{@code extractJson} — 从 LLM 响应中剥离 markdown 代码块标记，提取纯 JSON</li>
  *   <li>{@code isValidJson} — 校验 JSON 字符串是否可被 Jackson 解析</li>

@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
 /**
  * MCP工具注册器
  * <p>
- * 在从Nacos拉取MCP工具注册信息时，结合本地yaml配置的工具状态进行过滤
+ * 在从 Higress 拉取 MCP 工具信息时，结合本地 yaml 配置的工具状态进行过滤。
  * 未启用的工具不注册给模型，模型自然看不到、也无法调用
  * <p>
  * ★ 第一层校验：注册拉取时过滤（源头过滤）
@@ -35,7 +35,7 @@ public class McpToolRegistrar {
      * 构造器（由 AgentConfig 中的 @Bean 方法调用）
      *
      * @param governanceProperties 工具治理配置属性
-     * @param distributedTools     分布式工具提供者（Nacos 禁用时为 null）
+     * @param distributedTools     Higress MCP 工具提供者（MCP 客户端禁用时为 null）
      */
     public McpToolRegistrar(ToolGovernanceProperties governanceProperties,
                             ToolCallbackProvider distributedTools) {
@@ -52,9 +52,9 @@ public class McpToolRegistrar {
      * @return 可用的工具回调列表
      */
     public List<ToolCallback> loadAvailableTools() {
-        // ★ 容错：Nacos 分布式客户端不可用时优雅降级
+        // ★ 容错：Higress MCP 客户端不可用时优雅降级
         if (distributedTools == null) {
-            log.warn("分布式工具客户端不可用（Nacos 已禁用或未连接），返回空工具列表");
+            log.warn("Higress MCP 客户端已禁用或未连接，返回空工具列表");
             return new ArrayList<>();
         }
 

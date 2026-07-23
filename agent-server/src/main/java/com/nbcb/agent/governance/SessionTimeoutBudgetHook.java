@@ -4,7 +4,6 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.hook.ModelHook;
 import com.nbcb.agent.exception.AgentEarlyTerminationException;
-import com.nbcb.agent.metric.AgentMetrics;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
@@ -34,11 +33,9 @@ public class SessionTimeoutBudgetHook extends ModelHook {
     private static final ConcurrentHashMap<String, Long> SESSION_START_TIMES = new ConcurrentHashMap<>();
 
     private final AgentGovernanceProperties properties;
-    private final AgentMetrics metrics;
 
-    public SessionTimeoutBudgetHook(AgentGovernanceProperties properties, AgentMetrics metrics) {
+    public SessionTimeoutBudgetHook(AgentGovernanceProperties properties) {
         this.properties = properties;
-        this.metrics = metrics;
     }
 
     @Override
@@ -62,9 +59,6 @@ public class SessionTimeoutBudgetHook extends ModelHook {
         if (elapsed >= budgetMs) {
             log.warn("会话超时预算耗尽 [session={}]: elapsed={}ms, budget={}ms",
                     sessionId, elapsed, budgetMs);
-            if (metrics != null) {
-                metrics.governanceSessionTimeout.increment();
-            }
             throw new AgentEarlyTerminationException(
                     AgentEarlyTerminationException.REASON_TIMEOUT,
                     "会话处理时间已达到上限（" + elapsed + "ms / " + budgetMs + "ms）",
@@ -76,9 +70,6 @@ public class SessionTimeoutBudgetHook extends ModelHook {
         if (remaining < minNextStepMs) {
             log.warn("剩余处理时间不足 [session={}]: remaining={}ms, minNextStep={}ms",
                     sessionId, remaining, minNextStepMs);
-            if (metrics != null) {
-                metrics.governanceSessionTimeout.increment();
-            }
             throw new AgentEarlyTerminationException(
                     AgentEarlyTerminationException.REASON_TIMEOUT,
                     "剩余处理时间不足（" + remaining + "ms），停止继续推理",

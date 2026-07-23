@@ -5,11 +5,31 @@
 
 /* ===== Skills API: GET /api/v1/skills ===== */
 export interface SkillsResponse {
-  nacosConnected: boolean
+  agentName: string
   source: string
   skillCount: number
-  availableSkillIds: string[]
-  mode: string
+  skills: SkillStatus[]
+}
+
+export interface SkillStatus {
+  name: string
+  version: string
+  targetVersion: string
+  loadedVersion: string | null
+  status: 'NOT_LOADED' | 'LOADED' | 'OUTDATED'
+  description: string
+}
+
+export interface SkillReloadResponse {
+  agentName: string
+  skillName?: string
+  version?: string
+  status: 'RELOADED'
+  skillCount?: number
+  skills?: Array<{
+    skillName: string
+    version: string
+  }>
 }
 
 /* ===== Tools API: GET /api/v1/tools ===== */
@@ -17,54 +37,6 @@ export interface ToolInfo {
   name: string
   description: string
   source?: string
-}
-
-/* ===== Metrics API: GET /api/v1/metrics ===== */
-export interface ChatMetrics {
-  total: number
-  success: number
-  failure: number
-  retry: number
-  durationAvg: string
-}
-export interface SseMetrics {
-  connections: number
-  completed: number
-  timeout: number
-  error: number
-  active: number
-  durationAvg: string
-}
-export interface ToolMetrics {
-  total: number
-  success: number
-  failure: number
-}
-export interface SkillGenMetrics {
-  total: number
-  success: number
-  failure: number
-  durationAvg: string
-  phaseDecompose: string
-  phaseToolMap: string
-  phaseStepGen: string
-  phaseAssembly: string
-}
-export interface NacosMetrics {
-  connected: number
-  loadedSkills: number
-  serverAddr?: string
-}
-export interface ThreadPoolMetrics {
-  gauge: Record<string, string>
-}
-export interface MetricsResponse {
-  chat: ChatMetrics
-  sse: SseMetrics
-  tool: ToolMetrics
-  skillGen: SkillGenMetrics
-  nacos: NacosMetrics
-  threadPool: ThreadPoolMetrics
 }
 
 /* ===== SSE 事件类型（StreamEvent.EventType 映射） ===== */
@@ -124,7 +96,7 @@ export interface StageInfo {
 export interface SkillStageData {
   stageName: string
   status: string
-  detail: { stages: StageInfo[] }
+  detail?: unknown
   elapsedMs: number
   totalStages: number
 }

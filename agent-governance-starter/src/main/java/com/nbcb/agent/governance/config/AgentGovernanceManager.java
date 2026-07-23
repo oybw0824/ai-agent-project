@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 public class AgentGovernanceManager {
 
     private record ScopeKey(String agentName, String scopeId) {}
+    private record GlobalScopeKey(String configType, String scopeId) {}
 
     private final AgentGovernanceMapper mapper;
 
@@ -34,6 +35,7 @@ public class AgentGovernanceManager {
     private LoadingCache<String, Optional<AgentGovernanceEntity>> agentCache;
     private LoadingCache<ScopeKey, Optional<AgentGovernanceEntity>> userCache;
     private LoadingCache<ScopeKey, Optional<AgentGovernanceEntity>> orgCache;
+    private LoadingCache<GlobalScopeKey, Optional<AgentGovernanceEntity>> globalScopeCache;
     private LoadingCache<String, List<AgentGovernanceEntity>> routeCache;
 
     public AgentGovernanceManager(AgentGovernanceMapper mapper) {
@@ -47,6 +49,7 @@ public class AgentGovernanceManager {
         this.agentCache = Caffeine.newBuilder().expireAfterWrite(ttl, TimeUnit.SECONDS).maximumSize(max).build(mapper::findAgentConfig);
         this.userCache  = Caffeine.newBuilder().expireAfterWrite(ttl, TimeUnit.SECONDS).maximumSize(max).build(k -> mapper.findUserWhitelist(k.agentName, k.scopeId));
         this.orgCache   = Caffeine.newBuilder().expireAfterWrite(ttl, TimeUnit.SECONDS).maximumSize(max).build(k -> mapper.findOrgWhitelist(k.agentName, k.scopeId));
+        this.globalScopeCache = Caffeine.newBuilder().expireAfterWrite(ttl, TimeUnit.SECONDS).maximumSize(max).build(this::loadGlobalScope);
         this.routeCache = Caffeine.newBuilder().expireAfterWrite(ttl * 2L, TimeUnit.SECONDS).maximumSize(1).build(k -> mapper.findAllRoutes());
         log.info("★ AgentGovernanceManager 初始化完成：TTL={}s, max={}", ttl, max);
     }
@@ -89,17 +92,47 @@ public class AgentGovernanceManager {
         return agentCache.get(agentName).map(e -> "ENABLED".equals(e.getStatus())).orElse(true);
     }
 
+    public boolean isBlocked(String channelCode, String userId, String orgId) {
+        if (isBlocked(AgentGovernanceEntity.TYPE_CHANNEL, channelCode)) {
+            return true;
+        }
+        if (isBlocked(AgentGovernanceEntity.TYPE_USER, userId)) {
+            return true;
+        }
+        return isBlocked(AgentGovernanceEntity.TYPE_ORG, orgId);
+    }
+
     public List<AgentGovernanceEntity> getRoutes() { return routeCache.get("ALL"); }
 
     public void refreshAgent(String agentName) { agentCache.invalidate(agentName); }
     public void refreshUser(String agentName, String userId) { userCache.invalidate(new ScopeKey(agentName, userId)); }
     public void refreshOrg(String agentName, String orgId) { orgCache.invalidate(new ScopeKey(agentName, orgId)); }
-    public void refreshAll() { agentCache.invalidateAll(); userCache.invalidateAll(); orgCache.invalidateAll(); routeCache.invalidateAll(); }
+    public void refreshAll() { agentCache.invalidateAll(); userCache.invalidateAll(); orgCache.invalidateAll(); globalScopeCache.invalidateAll(); routeCache.invalidateAll(); }
 
     private boolean enabled(AgentGovernanceEntity e) { return "ENABLED".equals(e.getStatus()); }
+    private boolean disabled(AgentGovernanceEntity e) { return "DISABLED".equals(e.getStatus()); }
     private boolean isActive(AgentGovernanceEntity e) {
         LocalDateTime now = LocalDateTime.now();
         return (e.getEffectiveFrom() == null || !now.isBefore(e.getEffectiveFrom()))
             && (e.getEffectiveTo() == null || !now.isAfter(e.getEffectiveTo()));
+    }
+
+    private boolean isBlocked(String configType, String scopeId) {
+        if (scopeId == null || scopeId.isBlank()) {
+            return false;
+        }
+        return globalScopeCache.get(new GlobalScopeKey(configType, scopeId))
+                .filter(this::isActive)
+                .map(this::disabled)
+                .orElse(false);
+    }
+
+    private Optional<AgentGovernanceEntity> loadGlobalScope(GlobalScopeKey key) {
+        return switch (key.configType()) {
+            case AgentGovernanceEntity.TYPE_CHANNEL -> mapper.findGlobalChannelBlock(key.scopeId());
+            case AgentGovernanceEntity.TYPE_USER -> mapper.findGlobalUserBlock(key.scopeId());
+            case AgentGovernanceEntity.TYPE_ORG -> mapper.findGlobalOrgBlock(key.scopeId());
+            default -> Optional.empty();
+        };
     }
 }

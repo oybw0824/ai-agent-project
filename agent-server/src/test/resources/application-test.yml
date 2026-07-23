@@ -15,19 +15,9 @@ spring:
       client:
         enabled: false
 
-    alibaba:
-      mcp:
-        nacos:
-          client:
-            enabled: false           # 测试环境禁用 Nacos MCP 分布式客户端
-
   autoconfigure:
     exclude:
       - org.springframework.ai.mcp.client.common.autoconfigure.McpClientAutoConfiguration
-      - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpAutoConfiguration
-      - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpSseClientAutoConfiguration
-      - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpStreamableClientAutoConfiguration
-      - com.alibaba.cloud.ai.autoconfigure.mcp.discovery.client.NacosMcpToolCallbackAutoConfiguration
 
 # ==================== Agent 限流降级治理测试配置 ====================
 agent-governance:

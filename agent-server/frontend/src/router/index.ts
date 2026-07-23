@@ -12,16 +12,16 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '对话', icon: '💬' },
   },
   {
+    path: '/skills',
+    name: 'skills',
+    component: () => import('@/views/SkillsView.vue'),
+    meta: { title: 'Skill 管理', icon: '🧩' },
+  },
+  {
     path: '/skill-generator',
     name: 'skill-generator',
     component: () => import('@/views/SkillGeneratorView.vue'),
     meta: { title: 'Skill Generator', icon: '⚡' },
-  },
-  {
-    path: '/monitor',
-    name: 'monitor',
-    component: () => import('@/views/MonitorView.vue'),
-    meta: { title: '监控面板', icon: '📊' },
   },
 ]
 

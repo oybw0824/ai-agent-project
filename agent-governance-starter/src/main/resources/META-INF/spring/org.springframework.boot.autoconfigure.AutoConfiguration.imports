@@ -1,1 +1,2 @@
 com.nbcb.agent.governance.config.AgentGovernanceAutoConfiguration
+com.nbcb.agent.governance.mcp.McpToolChannelGovernanceAutoConfiguration

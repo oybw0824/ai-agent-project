@@ -12,6 +12,7 @@ target/
 *.iws
 *.iml
 *.ipr
+*.tsbuildinfo
 
 ### Eclipse ###
 .apt_generated
@@ -45,6 +46,10 @@ application-local.yml
 
 ### Playwright MCP artifacts ###
 .playwright-mcp/
+
+### Local runtime data ###
+.codex-nacos/
+.docker-codex/
 
 ### Claude Code / AI tools local config ###
 .claude/

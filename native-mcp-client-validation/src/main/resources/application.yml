@@ -1,0 +1,32 @@
+server:
+  port: ${SERVER_PORT:8090}
+
+spring:
+  application:
+    name: native-mcp-client-validation
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-chat}
+          max-tokens: 4096
+    mcp:
+      client:
+        # 本工程手工创建原生客户端，必须关闭 Spring AI 自动客户端。
+        enabled: false
+
+ai-gateway:
+  base-url: ${AI_GATEWAY_BASE_URL:http://127.0.0.1:11001}
+  # 当前网关只允许在全量端点执行 tools/call。
+  endpoint: ${AI_GATEWAY_MCP_ENDPOINT:/mcp}
+  application-name: ${AI_GATEWAY_MCP_APPLICATION:mcp-service}
+  auth-enabled: ${AI_GATEWAY_AUTH_ENABLED:false}
+  client-token: ${AI_GATEWAY_CLIENT_TOKEN:}
+  request-timeout: ${AI_GATEWAY_REQUEST_TIMEOUT:60s}
+  initialization-timeout: ${AI_GATEWAY_INITIALIZATION_TIMEOUT:30s}
+
+logging:
+  level:
+    com.nbcb.mcpclient: INFO

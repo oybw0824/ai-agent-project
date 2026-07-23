@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 网关 MCP 验证台</title>
+    <style>
+        :root {
+            --bg: #f3f5f1;
+            --surface: rgba(255, 255, 255, 0.88);
+            --surface-solid: #ffffff;
+            --ink: #18231d;
+            --muted: #66736b;
+            --line: #dfe5df;
+            --primary: #166534;
+            --primary-soft: #dcfce7;
+            --accent: #f59e0b;
+            --danger: #b42318;
+            --danger-soft: #fee4e2;
+            --shadow: 0 18px 55px rgba(31, 51, 39, 0.09);
+            --radius: 20px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 8% 5%, rgba(22, 101, 52, 0.12), transparent 29rem),
+                radial-gradient(circle at 95% 8%, rgba(245, 158, 11, 0.12), transparent 24rem),
+                var(--bg);
+            font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        }
+
+        button, input, textarea { font: inherit; }
+
+        button { cursor: pointer; }
+
+        .shell {
+            width: min(1240px, calc(100% - 36px));
+            margin: 0 auto;
+            padding: 36px 0 60px;
+        }
+
+        .hero {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .eyebrow {
+            margin: 0 0 10px;
+            color: var(--primary);
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            margin: 0;
+            font-family: Georgia, "STSong", serif;
+            font-size: clamp(34px, 5vw, 58px);
+            font-weight: 700;
+            line-height: 1.05;
+            letter-spacing: -.035em;
+        }
+
+        .subtitle {
+            max-width: 700px;
+            margin: 14px 0 0;
+            color: var(--muted);
+            font-size: 16px;
+            line-height: 1.7;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            flex: none;
+            margin-top: 8px;
+            padding: 10px 14px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: var(--surface);
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 700;
+            box-shadow: var(--shadow);
+        }
+
+        .status-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #98a29b;
+            box-shadow: 0 0 0 4px rgba(152, 162, 155, .15);
+        }
+
+        .status-pill.online { color: var(--primary); }
+        .status-pill.online .status-dot {
+            background: #22c55e;
+            box-shadow: 0 0 0 4px rgba(34, 197, 94, .16);
+        }
+
+        .status-pill.offline { color: var(--danger); }
+        .status-pill.offline .status-dot {
+            background: #ef4444;
+            box-shadow: 0 0 0 4px rgba(239, 68, 68, .14);
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+
+        .metric {
+            padding: 17px 19px;
+            border: 1px solid rgba(223, 229, 223, .9);
+            border-radius: 16px;
+            background: var(--surface);
+            box-shadow: 0 10px 34px rgba(31, 51, 39, .05);
+        }
+
+        .metric-label { color: var(--muted); font-size: 12px; font-weight: 700; }
+        .metric-value { margin-top: 7px; font-size: 17px; font-weight: 800; }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
+            gap: 20px;
+            align-items: start;
+        }
+
+        .column { display: grid; gap: 20px; }
+
+        .panel {
+            overflow: hidden;
+            border: 1px solid rgba(216, 224, 217, .95);
+            border-radius: var(--radius);
+            background: var(--surface);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(14px);
+        }
+
+        .panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 20px 22px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .panel-title { margin: 0; font-size: 18px; }
+        .panel-note { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+        .panel-body { padding: 22px; }
+
+        .ghost-button, .primary-button, .suggestion {
+            border: 0;
+            border-radius: 11px;
+            transition: transform .15s ease, background .15s ease, opacity .15s ease;
+        }
+
+        .ghost-button {
+            padding: 8px 11px;
+            border: 1px solid var(--line);
+            background: var(--surface-solid);
+            color: var(--ink);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .primary-button {
+            padding: 11px 16px;
+            background: var(--primary);
+            color: #fff;
+            font-weight: 800;
+            box-shadow: 0 8px 20px rgba(22, 101, 52, .18);
+        }
+
+        button:hover:not(:disabled) { transform: translateY(-1px); }
+        button:disabled { cursor: wait; opacity: .55; }
+
+        .tool-list { display: grid; gap: 10px; }
+
+        .tool-item {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, .7);
+        }
+
+        .tool-name { font-family: Consolas, monospace; font-size: 14px; font-weight: 800; }
+        .tool-description { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+        .empty { padding: 28px 8px; color: var(--muted); text-align: center; }
+
+        .field { margin-bottom: 15px; }
+        .field label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 800; }
+
+        input, textarea {
+            width: 100%;
+            border: 1px solid #ccd6ce;
+            border-radius: 12px;
+            outline: none;
+            background: rgba(255,255,255,.86);
+            color: var(--ink);
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+
+        input { padding: 11px 12px; }
+        textarea { min-height: 96px; padding: 13px; line-height: 1.6; resize: vertical; }
+        input:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(22,101,52,.1); }
+
+        .action-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .selected-tool { color: var(--primary); font-family: Consolas, monospace; font-size: 13px; font-weight: 800; }
+
+        .result {
+            display: none;
+            margin-top: 16px;
+            padding: 14px;
+            border-radius: 13px;
+            background: #eff6f0;
+            color: #24412d;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font: 13px/1.65 Consolas, monospace;
+        }
+
+        .result.visible { display: block; }
+        .result.error { background: var(--danger-soft); color: var(--danger); }
+
+        .suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .suggestion { padding: 8px 11px; background: #edf3ee; color: #395143; font-size: 12px; }
+        .suggestion:hover { background: var(--primary-soft); }
+
+        .chat-feed {
+            display: grid;
+            gap: 12px;
+            min-height: 235px;
+            max-height: 440px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+            padding: 4px 4px 4px 0;
+        }
+
+        .message { max-width: 88%; padding: 12px 14px; border-radius: 14px; white-space: pre-wrap; line-height: 1.65; }
+        .message.user { justify-self: end; border-bottom-right-radius: 4px; background: var(--primary); color: #fff; }
+        .message.agent { justify-self: start; border-bottom-left-radius: 4px; background: #edf2ee; color: var(--ink); }
+        .message.error { justify-self: start; background: var(--danger-soft); color: var(--danger); }
+        .message-meta { display: block; margin-top: 7px; opacity: .65; font-size: 10px; }
+
+        .chat-actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
+
+        .log-panel { grid-column: 1 / -1; }
+        .log-output {
+            min-height: 110px;
+            max-height: 240px;
+            overflow: auto;
+            margin: 0;
+            color: #d8e7dc;
+            background: #17231c;
+            font: 12px/1.65 Consolas, monospace;
+            white-space: pre-wrap;
+        }
+        .log-wrap { padding: 18px; background: #17231c; }
+
+        .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-right: 7px;
+            border: 2px solid rgba(255,255,255,.35);
+            border-top-color: #fff;
+            border-radius: 50%;
+            vertical-align: -2px;
+            animation: spin .7s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 880px) {
+            .hero { display: block; }
+            .status-pill { margin-top: 20px; }
+            .workspace { grid-template-columns: 1fr; }
+            .metrics { grid-template-columns: 1fr; }
+            .log-panel { grid-column: auto; }
+        }
+    </style>
+</head>
+<body>
+<main class="shell">
+    <header class="hero">
+        <div>
+            <p class="eyebrow">Native MCP Client · 2025-11-25</p>
+            <h1>AI 网关 MCP 验证台</h1>
+            <p class="subtitle">在一个页面里完成工具发现、直接调用和 ReactAgent 对话测试。页面只访问当前客户端，不会直接绕过客户端连接网关。</p>
+        </div>
+        <div id="connectionStatus" class="status-pill">
+            <span class="status-dot"></span>
+            <span id="connectionText">正在连接客户端</span>
+        </div>
+    </header>
+
+    <section class="metrics">
+        <article class="metric">
+            <div class="metric-label">协议版本</div>
+            <div class="metric-value">MCP 2025-11-25</div>
+        </article>
+        <article class="metric">
+            <div class="metric-label">发现工具</div>
+            <div id="toolCount" class="metric-value">—</div>
+        </article>
+        <article class="metric">
+            <div class="metric-label">最近请求</div>
+            <div id="lastLatency" class="metric-value">尚未调用</div>
+        </article>
+    </section>
+
+    <section class="workspace">
+        <div class="column">
+            <article class="panel">
+                <div class="panel-head">
+                    <div>
+                        <h2 class="panel-title">网关工具</h2>
+                        <p class="panel-note">来自 GET /api/v1/mcp/tools</p>
+                    </div>
+                    <button id="refreshTools" class="ghost-button">刷新</button>
+                </div>
+                <div class="panel-body">
+                    <div id="toolList" class="tool-list">
+                        <div class="empty">正在读取工具列表…</div>
+                    </div>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-head">
+                    <div>
+                        <h2 class="panel-title">直接调用工具</h2>
+                        <p class="panel-note">绕过模型，验证 MCP tools/call 链路</p>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <form id="toolForm">
+                        <div id="toolFields"></div>
+                        <div class="action-row">
+                            <span id="selectedTool" class="selected-tool">请选择工具</span>
+                            <button id="callTool" class="primary-button" type="submit" disabled>调用工具</button>
+                        </div>
+                    </form>
+                    <div id="toolResult" class="result"></div>
+                </div>
+            </article>
+        </div>
+
+        <div class="column">
+            <article class="panel">
+                <div class="panel-head">
+                    <div>
+                        <h2 class="panel-title">ReactAgent 对话</h2>
+                        <p class="panel-note">真实模型自动判断是否调用 MCP 工具</p>
+                    </div>
+                    <button id="clearChat" class="ghost-button">清空</button>
+                </div>
+                <div class="panel-body">
+                    <div class="suggestions">
+                        <button class="suggestion" data-question="请查询北京天气，并计算 (12+8)*3，最后汇总告诉我结果。">天气 + 计算</button>
+                        <button class="suggestion" data-question="只调用天气工具查询上海天气。">只查天气</button>
+                        <button class="suggestion" data-question="请使用计算工具计算 1/0，并解释返回结果。">测试工具错误</button>
+                        <button class="suggestion" data-question="请用一句话介绍你自己。">普通对话</button>
+                    </div>
+                    <div id="chatFeed" class="chat-feed">
+                        <div class="message agent">你好，我可以帮你验证模型是否正确选择并调用 MCP 工具。</div>
+                    </div>
+                    <form id="chatForm" class="chat-actions">
+                        <textarea id="question" placeholder="输入测试问题；Ctrl + Enter 快速发送" required></textarea>
+                        <button id="sendChat" class="primary-button" type="submit">发送</button>
+                    </form>
+                </div>
+            </article>
+        </div>
+
+        <article class="panel log-panel">
+            <div class="panel-head">
+                <div>
+                    <h2 class="panel-title">请求记录</h2>
+                    <p class="panel-note">用于快速定位接口、耗时和错误</p>
+                </div>
+                <button id="clearLog" class="ghost-button">清空日志</button>
+            </div>
+            <div class="log-wrap"><pre id="logOutput" class="log-output">等待请求…</pre></div>
+        </article>
+    </section>
+</main>
+
+<script>
+    const state = { tools: [], selectedTool: null };
+    const $ = (id) => document.getElementById(id);
+
+    function log(message, data) {
+        const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        const suffix = data === undefined ? '' : `\n${JSON.stringify(data, null, 2)}`;
+        const line = `[${time}] ${message}${suffix}`;
+        $('logOutput').textContent = $('logOutput').textContent === '等待请求…'
+            ? line : `${$('logOutput').textContent}\n\n${line}`;
+        $('logOutput').scrollTop = $('logOutput').scrollHeight;
+    }
+
+    function setConnection(online, text) {
+        $('connectionStatus').className = `status-pill ${online ? 'online' : 'offline'}`;
+        $('connectionText').textContent = text;
+    }
+
+    async function fetchJson(url, options = {}) {
+        const started = performance.now();
+        const response = await fetch(url, {
+            ...options,
+            headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+        });
+        const elapsed = Math.round(performance.now() - started);
+        $('lastLatency').textContent = `${elapsed} ms`;
+        const text = await response.text();
+        let body;
+        try { body = text ? JSON.parse(text) : null; }
+        catch { body = { raw: text }; }
+        if (!response.ok) {
+            const message = body?.message || body?.error || `HTTP ${response.status}`;
+            throw new Error(`${message}（${elapsed} ms）`);
+        }
+        return { body, elapsed };
+    }
+
+    function createElement(tag, className, text) {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text !== undefined) element.textContent = text;
+        return element;
+    }
+
+    async function loadTools() {
+        $('refreshTools').disabled = true;
+        try {
+            const { body, elapsed } = await fetchJson('/api/v1/mcp/tools');
+            state.tools = Array.isArray(body) ? body : [];
+            $('toolCount').textContent = `${state.tools.length} 个`;
+            setConnection(true, '客户端与网关正常');
+            renderTools();
+            log(`工具发现成功 · ${elapsed} ms`, state.tools.map(tool => tool.name));
+            if (!state.selectedTool && state.tools.length) selectTool(state.tools[0]);
+        } catch (error) {
+            state.tools = [];
+            $('toolCount').textContent = '连接失败';
+            $('toolList').replaceChildren(createElement('div', 'empty', error.message));
+            setConnection(false, '无法读取工具');
+            log('工具发现失败', { error: error.message });
+        } finally {
+            $('refreshTools').disabled = false;
+        }
+    }
+
+    function renderTools() {
+        const list = $('toolList');
+        list.replaceChildren();
+        if (!state.tools.length) {
+            list.append(createElement('div', 'empty', '网关没有返回可用工具'));
+            return;
+        }
+        state.tools.forEach(tool => {
+            const item = createElement('div', 'tool-item');
+            const info = createElement('div');
+            info.append(createElement('div', 'tool-name', tool.name));
+            info.append(createElement('div', 'tool-description', tool.description || '暂无描述'));
+            const button = createElement('button', 'ghost-button', '选择调用');
+            button.type = 'button';
+            button.addEventListener('click', () => selectTool(tool));
+            item.append(info, button);
+            list.append(item);
+        });
+    }
+
+    function selectTool(tool) {
+        state.selectedTool = tool;
+        $('selectedTool').textContent = tool.name;
+        $('callTool').disabled = false;
+        $('toolResult').className = 'result';
+        const fields = $('toolFields');
+        fields.replaceChildren();
+        const schema = tool.inputSchema || {};
+        const required = new Set(schema.required || []);
+        Object.entries(schema.properties || {}).forEach(([name, property]) => {
+            const wrapper = createElement('div', 'field');
+            const label = createElement('label', '', `${name}${required.has(name) ? ' *' : ''}`);
+            label.htmlFor = `arg-${name}`;
+            const input = document.createElement('input');
+            input.id = `arg-${name}`;
+            input.name = name;
+            input.dataset.type = property.type || 'string';
+            input.required = required.has(name);
+            input.placeholder = property.description || `请输入 ${name}`;
+            if (tool.name === 'calculate' && name === 'expression') input.value = '(12+8)*3';
+            if (tool.name === 'getWeatherByCity' && name === 'city') input.value = '北京';
+            wrapper.append(label, input);
+            fields.append(wrapper);
+        });
+    }
+
+    function parseValue(input) {
+        if (input.dataset.type === 'number' || input.dataset.type === 'integer') {
+            return Number(input.value);
+        }
+        if (input.dataset.type === 'boolean') return input.value === 'true';
+        return input.value;
+    }
+
+    function prettyToolContent(body) {
+        const text = body?.content?.map(item => item.text ?? JSON.stringify(item)).join('\n');
+        if (!text) return JSON.stringify(body, null, 2);
+        try { return JSON.stringify(JSON.parse(text), null, 2); }
+        catch { return text; }
+    }
+
+    $('toolForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!state.selectedTool) return;
+        const button = $('callTool');
+        const result = $('toolResult');
+        const argumentsObject = {};
+        $('toolFields').querySelectorAll('input').forEach(input => {
+            argumentsObject[input.name] = parseValue(input);
+        });
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner"></span>调用中';
+        try {
+            const { body, elapsed } = await fetchJson(
+                `/api/v1/mcp/tools/${encodeURIComponent(state.selectedTool.name)}/call`,
+                { method: 'POST', body: JSON.stringify({ arguments: argumentsObject }) }
+            );
+            result.textContent = prettyToolContent(body);
+            result.className = `result visible${body.error ? ' error' : ''}`;
+            log(`工具 ${state.selectedTool.name} 调用完成 · ${elapsed} ms`, body);
+        } catch (error) {
+            result.textContent = error.message;
+            result.className = 'result visible error';
+            log(`工具 ${state.selectedTool.name} 调用失败`, { error: error.message });
+        } finally {
+            button.disabled = false;
+            button.textContent = '调用工具';
+        }
+    });
+
+    function appendMessage(role, text, elapsed) {
+        const message = createElement('div', `message ${role}`, text);
+        if (elapsed !== undefined) {
+            message.append(createElement('span', 'message-meta', `${elapsed} ms`));
+        }
+        $('chatFeed').append(message);
+        $('chatFeed').scrollTop = $('chatFeed').scrollHeight;
+    }
+
+    async function sendQuestion(question) {
+        if (!question.trim()) return;
+        appendMessage('user', question.trim());
+        const button = $('sendChat');
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner"></span>思考中';
+        $('question').disabled = true;
+        try {
+            const { body, elapsed } = await fetchJson('/api/v1/agent/chat', {
+                method: 'POST', body: JSON.stringify({ question: question.trim() })
+            });
+            appendMessage('agent', body.answer || '模型返回了空回答', elapsed);
+            log(`Agent 对话完成 · ${elapsed} ms`, body);
+        } catch (error) {
+            appendMessage('error', `调用失败：${error.message}`);
+            log('Agent 对话失败', { error: error.message });
+        } finally {
+            button.disabled = false;
+            button.textContent = '发送';
+            $('question').disabled = false;
+            $('question').focus();
+        }
+    }
+
+    $('chatForm').addEventListener('submit', event => {
+        event.preventDefault();
+        const question = $('question').value;
+        $('question').value = '';
+        sendQuestion(question);
+    });
+
+    $('question').addEventListener('keydown', event => {
+        if (event.key === 'Enter' && event.ctrlKey) {
+            event.preventDefault();
+            $('chatForm').requestSubmit();
+        }
+    });
+
+    document.querySelectorAll('.suggestion').forEach(button => {
+        button.addEventListener('click', () => {
+            $('question').value = button.dataset.question;
+            $('question').focus();
+        });
+    });
+
+    $('refreshTools').addEventListener('click', loadTools);
+    $('clearLog').addEventListener('click', () => { $('logOutput').textContent = '等待请求…'; });
+    $('clearChat').addEventListener('click', () => {
+        $('chatFeed').replaceChildren(createElement('div', 'message agent', '对话记录已清空，可以开始新的测试。'));
+    });
+
+    loadTools();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+server:
+  port: ${SERVER_PORT:11001}
+
+spring:
+  application:
+    name: native-ai-gateway-validation
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.nbcb.mcpserver: INFO

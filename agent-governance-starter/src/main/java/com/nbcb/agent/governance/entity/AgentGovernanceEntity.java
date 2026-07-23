@@ -44,6 +44,9 @@ public class AgentGovernanceEntity {
     /** 机构 ID（仅 ORG 类型） */
     private String orgId;
 
+    @TableField("channel_code")
+    private String channelCode;
+
     /** 生效开始时间（USER/ORG 类型，NULL 表示立即生效） */
     @TableField("effective_from")
     private LocalDateTime effectiveFrom;
@@ -68,6 +71,7 @@ public class AgentGovernanceEntity {
     // ==================== 类型常量 ====================
 
     public static final String TYPE_AGENT = "AGENT";
+    public static final String TYPE_CHANNEL = "CHANNEL";
     public static final String TYPE_USER  = "USER";
     public static final String TYPE_ORG   = "ORG";
     public static final String TYPE_ROUTE = "ROUTE";
